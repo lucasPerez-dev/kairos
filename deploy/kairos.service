@@ -1,0 +1,32 @@
+[Unit]
+Description=Kairos - copilote de files d'attente PortAventura World
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kairos
+WorkingDirectory=/opt/kairos
+EnvironmentFile=/opt/kairos/.env
+ExecStart=/opt/kairos/.venv/bin/python /opt/kairos/main.py
+Restart=always
+RestartSec=5
+
+# --- Durcissement ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+# Seul le dossier de données est inscriptible (base SQLite + WAL).
+# install.sh réécrit ce chemin si APP_DIR change.
+ReadWritePaths=/opt/kairos/data
+
+[Install]
+WantedBy=multi-user.target

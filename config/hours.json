@@ -1,0 +1,10 @@
+{
+  "_comment": "Horaires d'ouverture. 'default' s'applique à TOUTE date absente de 'days' : on y met la plage récurrente la plus large (semaine 10:30-18:00, week-ends jusqu'à 20:00) pour couvrir un maximum de dates. 'days' ne sert qu'aux exceptions ponctuelles (fermeture, nocturne, horaire spécial). Valeurs estimées, à ajuster si besoin. Note : le poll est sauté hors de cette plage (skip_when_closed), donc une plage trop étroite = données manquantes, une plage trop large = seulement quelques polls à vide.",
+  "timezone": "Europe/Madrid",
+  "default": { "open": "10:30", "close": "20:00", "estimated": true },
+  "days": {
+    "2027-04-02": { "open": "10:30", "close": "20:00", "estimated": true },
+    "2027-04-03": { "open": "10:30", "close": "20:00", "estimated": true },
+    "2027-04-04": { "open": "10:30", "close": "19:00", "estimated": true }
+  }
+}

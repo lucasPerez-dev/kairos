@@ -1,0 +1,14 @@
+{
+  "_comment": "Modèle de marche approximatif du parc. Les coordonnées sont dans un repère arbitraire (unités = 'layout_scale_meters' mètres). Estimation grossière, éditable sans risque : seules les recommandations de trajet changent.",
+  "walk_speed_m_per_min": 70,
+  "layout_scale_meters": 9,
+  "zones": {
+    "Méditerranée": [50, 12],
+    "Polynésie": [26, 30],
+    "Chine": [47, 47],
+    "México": [66, 58],
+    "Far West": [84, 42],
+    "SésamoAventura": [70, 22],
+    "Ferrari Land": [10, 20]
+  }
+}

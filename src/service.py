@@ -1,0 +1,334 @@
+"""Service central : orchestration du polling, des alertes et du briefing."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import math
+from datetime import datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable
+
+from .alerts import Alerter
+from .config import Settings
+from .engine import Engine, trend_arrow
+from .fetcher import QueueTimesFetcher
+from .models import Ride
+from .park_hours import ParkHours
+from .store import Store, iso, utcnow
+
+logger = logging.getLogger(__name__)
+
+Notify = Callable[[str], Awaitable[None]]
+
+CATEGORY_LABELS = {
+    "coaster": "montagne russe",
+    "thrill": "sensations",
+    "water": "aquatique",
+    "family": "familiale",
+    "kids": "enfants",
+    "show": "spectacle",
+    "walkthrough": "walkthrough",
+    "transport": "transport",
+}
+
+PHASE_LABELS = {
+    "before_open": "Avant ouverture",
+    "opening": "Ouverture",
+    "peak": "Heures pleines (11h–15h)",
+    "afternoon": "Après-midi",
+    "closing": "Dernière heure",
+    "closed": "Fermé",
+    "unknown": "Horaires inconnus",
+}
+
+
+def esc(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+class KairosService:
+    def __init__(
+        self,
+        settings: Settings,
+        store: Store,
+        fetcher: QueueTimesFetcher,
+        engine: Engine,
+        hours: ParkHours,
+        alerter: Alerter,
+        parks: list[dict[str, Any]],
+    ) -> None:
+        self.settings = settings
+        self.store = store
+        self.fetcher = fetcher
+        self.engine = engine
+        self.hours = hours
+        self.alerter = alerter
+        self.parks = parks
+        self.parks_by_key = {p["key"]: p for p in parks}
+        self.notifier: Notify | None = None
+        self._lock = asyncio.Lock()
+        self._first_poll = True
+        self.last_poll: datetime | None = None
+        self.last_error: str | None = None
+
+    # ------------------------------------------------------------ info --- #
+
+    @property
+    def mode(self) -> str:
+        return self.store.get_state("mode", self.settings.mode)
+
+    def park_name(self, key: str) -> str:
+        return self.parks_by_key.get(key, {}).get("name", key)
+
+    def current_zone(self) -> str | None:
+        return self.store.get_state("current_zone")
+
+    def phase_label(self, now: datetime | None = None) -> str:
+        return PHASE_LABELS.get(self.hours.phase(now or utcnow()), "—")
+
+    def rides(self) -> list[Ride]:
+        return self.store.rides()
+
+    def resolve_ride(self, query: str) -> Ride | None:
+        q = (query or "").strip().lower()
+        if not q:
+            return None
+        rides = self.store.rides()
+        for ride in rides:
+            if ride.name.lower() == q:
+                return ride
+        matches = [ride for ride in rides if q in ride.name.lower()]
+        if len(matches) == 1:
+            return matches[0]
+        return matches[0] if matches else None
+
+    def resolve_zone(self, query: str) -> str | None:
+        zones = list(self.engine.zones.coords.keys())
+        q = (query or "").strip().lower()
+        for zone in zones:
+            if zone.lower() == q:
+                return zone
+        for zone in zones:
+            if q and q in zone.lower():
+                return zone
+        return None
+
+    def zones(self) -> list[str]:
+        return list(self.engine.zones.coords.keys())
+
+    # ---------------------------------------------------------- polling --- #
+
+    async def poll_once(self) -> None:
+        async with self._lock:
+            try:
+                await self._poll_once()
+                self.last_error = None
+            except Exception as exc:  # noqa: BLE001 - on ne veut jamais tuer la boucle
+                self.last_error = str(exc)
+                logger.exception("Erreur pendant le polling")
+
+    async def _poll_once(self) -> None:
+        now = utcnow()
+        if self.settings.skip_when_closed and self.hours.phase(now) in ("closed", "before_open"):
+            logger.debug("Parc fermé : poll ignoré (aucune donnée inutile stockée).")
+            return
+
+        data = await self.fetcher.fetch_all()
+
+        known = {ride.id: ride for ride in self.store.rides()}
+        rows: list[tuple[int, datetime, int, bool]] = []
+        for raw_rides in data.values():
+            for raw in raw_rides:
+                if raw.ride_id not in known:
+                    continue
+                rows.append((raw.ride_id, raw.updated or now, raw.wait_minutes, raw.is_open))
+
+        self.last_poll = now
+        if not rows or not any(is_open for _, _, _, is_open in rows):
+            logger.debug("Aucune attraction ouverte : rien stocké.")
+            return
+
+        self.store.add_snapshots(rows)
+
+        statuses = self.engine.statuses(self.current_zone(), now)
+
+        if self._first_poll:
+            self.alerter.prime(statuses)
+            self._first_poll = False
+        else:
+            alerts = self.alerter.evaluate(statuses)
+            if self.mode == "trip" and alerts and self.notifier:
+                for alert in alerts:
+                    await self.notifier(self.format_alert(alert))
+
+        if self.settings.history_retention_days > 0:
+            cutoff = now - timedelta(days=self.settings.history_retention_days)
+            self.store.prune_snapshots(cutoff)
+
+        logger.info("Poll OK : %d attractions mises à jour", len(rows))
+
+    # --------------------------------------------------------- timeline --- #
+
+    async def check_timeline(self) -> None:
+        if self.mode != "trip" or not self.notifier:
+            return
+        now = utcnow()
+        phase = self.hours.phase(now)
+        if phase in ("closed", "before_open", "unknown"):
+            return
+        today = self.hours.local(now).date().isoformat()
+
+        if not self.store.get_state(f"briefing:{today}"):
+            await self.notifier(self.format_briefing())
+            self.store.set_state(f"briefing:{today}", True)
+
+        minutes_to_close = self.hours.minutes_to_close(now)
+        if (
+            minutes_to_close is not None
+            and 0 < minutes_to_close <= 60
+            and not self.store.get_state(f"closing:{today}")
+        ):
+            await self.notifier(self.format_closing_reminder(minutes_to_close))
+            self.store.set_state(f"closing:{today}", True)
+
+    # --------------------------------------------------------- messages --- #
+
+    def format_alert(self, alert) -> str:
+        icon = "🔓" if alert.kind == "reopened" else "⚡"
+        return (
+            f"{icon} <b>{esc(alert.ride.name)}</b> — {alert.wait_minutes} min "
+            f"(seuil {alert.threshold}) · {esc(alert.ride.zone)}\n"
+            f"<i>C'est le moment, fonce !</i>"
+        )
+
+    def format_recos(self, limit: int = 3) -> str:
+        recos = self.engine.recommend(self.current_zone(), limit=limit)
+        if not recos:
+            return "Aucune attraction ouverte pour l'instant. Le parc est peut-être fermé."
+        lines = ["🎯 <b>Où aller maintenant</b>"]
+        zone = self.current_zone()
+        lines.append(f"<i>Depuis : {esc(zone) if zone else 'ta position inconnue'}</i>")
+        lines.append("")
+        medals = ["🥇", "🥈", "🥉"]
+        for i, reco in enumerate(recos):
+            prefix = medals[i] if i < len(medals) else "•"
+            arrow = trend_arrow(reco.trend_label)
+            wait = f"{reco.wait_minutes} min" if reco.wait_minutes is not None else "?"
+            lines.append(
+                f"{prefix} <b>{esc(reco.ride.name)}</b> — {wait} {arrow} · {esc(reco.ride.zone)}"
+            )
+            if reco.reason:
+                lines.append(f"    <i>{esc(reco.reason)}</i>")
+        return "\n".join(lines)
+
+    def format_status_table(self, park_key: str | None = None) -> str:
+        statuses = self.engine.statuses(self.current_zone())
+        if park_key:
+            statuses = [s for s in statuses if s.ride.park == park_key]
+        open_statuses = [s for s in statuses if s.is_open]
+        if not open_statuses:
+            return "Aucune attraction ouverte pour l'instant."
+
+        park_keys = [park_key] if park_key else [p["key"] for p in self.parks]
+        lines: list[str] = []
+        for key in park_keys:
+            park_statuses = [s for s in open_statuses if s.ride.park == key]
+            if not park_statuses:
+                continue
+            lines.append(f"<b>{esc(self.park_name(key))}</b>")
+            for status in sorted(park_statuses, key=lambda s: (s.ride.zone, -(s.wait_minutes or 0))):
+                wait = status.wait_minutes or 0
+                mark = "✅" if status.done else ("🔥" if status.ride.priority == 3 else "•")
+                arrow = trend_arrow(status.trend_label)
+                lines.append(
+                    f"{mark} {esc(status.ride.name)} — <b>{wait} min</b> {arrow} · {esc(status.ride.zone)}"
+                )
+            lines.append("")
+        return "\n".join(lines).strip()
+
+    def format_briefing(self) -> str:
+        now = utcnow()
+        local = self.hours.local(now)
+        hour = local.strftime("%H:%M")
+        recos = self.engine.recommend(self.current_zone(), limit=3)
+        lines = [f"☀️ <b>Bonjour !</b> Il est {hour}.", ""]
+        if recos:
+            lines.append("Pour commencer, visez :")
+            for reco in recos:
+                wait = f"{reco.wait_minutes} min" if reco.wait_minutes is not None else "?"
+                lines.append(f"• <b>{esc(reco.ride.name)}</b> — {wait} · {esc(reco.ride.zone)}")
+        lines.append("")
+        lines.append("<i>Astuce : les grosses attractions sont les plus calmes à l'ouverture et en fin de journée.</i>")
+        return "\n".join(lines)
+
+    def format_closing_reminder(self, minutes_to_close: float) -> str:
+        statuses = self.engine.statuses(self.current_zone())
+        remaining = [s for s in statuses if not s.done and s.ride.priority >= 3]
+        lines = [f"⏳ <b>Le parc ferme dans {int(minutes_to_close)} min.</b>"]
+        if remaining:
+            names = ", ".join(esc(s.ride.name) for s in remaining[:6])
+            lines.append(f"Il reste : {names}")
+        else:
+            lines.append("Vous avez coché toutes les priorités, bravo ! 🎉")
+        lines.append("<i>Dernière vague sur les grosses attractions.</i>")
+        return "\n".join(lines)
+
+    # -------------------------------------------------------- dashboard --- #
+
+    def state_payload(self) -> dict[str, Any]:
+        now = utcnow()
+        statuses = self.engine.statuses(self.current_zone(), now)
+        recos = self.engine.recommend(self.current_zone(), limit=5, now=now)
+
+        rides_payload: list[dict[str, Any]] = []
+        for status in statuses:
+            rides_payload.append(
+                {
+                    "id": status.ride.id,
+                    "name": status.ride.name,
+                    "park": status.ride.park,
+                    "park_name": self.park_name(status.ride.park),
+                    "zone": status.ride.zone,
+                    "category": status.ride.category,
+                    "priority": status.ride.priority,
+                    "is_open": status.is_open,
+                    "wait_minutes": status.wait_minutes,
+                    "trend_label": status.trend_label,
+                    "trend": status.trend,
+                    "done": status.done,
+                    "score": status.score if math.isfinite(status.score) else None,
+                    "travel_minutes": round(status.travel_minutes, 1),
+                    "updated": iso(status.updated) if status.updated else None,
+                }
+            )
+
+        return {
+            "generated_at": iso(now),
+            "phase": self.hours.phase(now),
+            "minutes_to_close": self.hours.minutes_to_close(now),
+            "mode": self.mode,
+            "current_zone": self.current_zone(),
+            "zones": self.zones(),
+            "parks": [{"key": p["key"], "name": p["name"]} for p in self.parks],
+            "rides": rides_payload,
+            "recommendations": [
+                {
+                    "id": r.ride.id,
+                    "name": r.ride.name,
+                    "zone": r.ride.zone,
+                    "wait_minutes": r.wait_minutes,
+                    "trend_label": r.trend_label,
+                    "trend": r.trend_delta,
+                    "travel_minutes": r.travel_minutes,
+                    "score": r.score,
+                    "reason": r.reason,
+                }
+                for r in recos
+            ],
+            "last_poll": iso(self.last_poll) if self.last_poll else None,
+            "last_error": self.last_error,
+            "attribution": {
+                "text": self.settings.attribution_text,
+                "url": self.settings.attribution_url,
+            },
+        }
