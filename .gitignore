@@ -17,5 +17,8 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# Logs
+*.log
+
 # Divers
 .DS_Store

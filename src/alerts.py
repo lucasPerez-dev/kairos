@@ -87,17 +87,18 @@ class Alerter:
             if not (just_crossed or just_reopened):
                 continue
 
-            if self._in_cooldown(ride_id, "threshold", cooldown, now):
+            # Cooldown par attraction, toutes catégories confondues (seuil ou réouverture).
+            if self._in_cooldown(ride_id, cooldown, now):
                 continue
 
             kind = "reopened" if just_reopened else "threshold"
             alerts.append(Alert(ride=status.ride, wait_minutes=wait, threshold=threshold, kind=kind))
-            self.store.log_alert(ride_id, "threshold", wait)
+            self.store.log_alert(ride_id, kind, wait)
 
         return alerts
 
-    def _in_cooldown(self, ride_id: int, kind: str, cooldown_minutes: int, now: datetime) -> bool:
-        last = self.store.last_alert_ts(ride_id, kind)
+    def _in_cooldown(self, ride_id: int, cooldown_minutes: int, now: datetime) -> bool:
+        last = self.store.last_alert_ts(ride_id)
         if last is None:
             return False
         return (now - last).total_seconds() < cooldown_minutes * 60

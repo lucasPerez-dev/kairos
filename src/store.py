@@ -226,12 +226,19 @@ class Store:
             )
             self._conn.commit()
 
-    def last_alert_ts(self, ride_id: int, kind: str) -> datetime | None:
+    def last_alert_ts(self, ride_id: int, kind: str | None = None) -> datetime | None:
+        """Dernière alerte pour une attraction. ``kind=None`` = toutes catégories confondues."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT ts FROM alerts WHERE ride_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
-                (ride_id, kind),
-            ).fetchone()
+            if kind is None:
+                row = self._conn.execute(
+                    "SELECT ts FROM alerts WHERE ride_id = ? ORDER BY id DESC LIMIT 1",
+                    (ride_id,),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT ts FROM alerts WHERE ride_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+                    (ride_id, kind),
+                ).fetchone()
         return parse_iso(row["ts"]) if row else None
 
     # ----------------------------------------------------------- stats --- #

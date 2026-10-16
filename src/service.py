@@ -158,8 +158,8 @@ class KairosService:
         else:
             alerts = self.alerter.evaluate(statuses)
             if self.mode == "trip" and alerts and self.notifier:
-                for alert in alerts:
-                    await self.notifier(self.format_alert(alert))
+                for message in self.format_alerts(alerts):
+                    await self.notifier(message)
 
         if self.settings.history_retention_days > 0:
             cutoff = now - timedelta(days=self.settings.history_retention_days)
@@ -200,6 +200,35 @@ class KairosService:
             f"(seuil {alert.threshold}) · {esc(alert.ride.zone)}\n"
             f"<i>C'est le moment, fonce !</i>"
         )
+
+    def format_alerts(self, alerts) -> list[str]:
+        """Regroupe les alertes d'un même poll par parc.
+
+        Un poll peut détecter plusieurs franchissements à la fois (souvent des
+        réouvertures groupées, ex. l'ouverture de Ferrari Land). Sans regroupement,
+        cela envoie une rafale de messages ; ici on n'en envoie qu'un par parc.
+        """
+        if len(alerts) == 1:
+            return [self.format_alert(alerts[0])]
+
+        by_park: dict[str, list] = {}
+        for alert in alerts:
+            by_park.setdefault(alert.ride.park, []).append(alert)
+
+        messages: list[str] = []
+        for park, group in by_park.items():
+            kinds = {a.kind for a in group}
+            icon = "🔓" if kinds == {"reopened"} else ("⚡" if kinds == {"threshold"} else "🔔")
+            verb = "attraction se libère" if len(group) == 1 else "attractions se libèrent"
+            lines = [f"{icon} <b>{len(group)} {verb} · {esc(self.park_name(park))}</b>"]
+            for alert in group:
+                mark = "🔓" if alert.kind == "reopened" else "⚡"
+                lines.append(
+                    f"{mark} <b>{esc(alert.ride.name)}</b> — {alert.wait_minutes} min · {esc(alert.ride.zone)}"
+                )
+            lines.append("<i>C'est le moment, foncez !</i>")
+            messages.append("\n".join(lines))
+        return messages
 
     def format_recos(self, limit: int = 3) -> str:
         recos = self.engine.recommend(self.current_zone(), limit=limit)
