@@ -28,7 +28,8 @@ PAGE = r"""<!doctype html>
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-         background: var(--bg); color: var(--txt); padding-bottom: 24px; }
+         background: var(--bg); color: var(--txt);
+         padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   a { color: var(--accent); }
 
   header.top { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap;
@@ -56,9 +57,11 @@ PAGE = r"""<!doctype html>
   .fresh { font-size: 12px; color: var(--muted); }
   .fresh.stale { color: var(--amber); }
 
-  .banner { display: none; padding: 10px 16px; font-size: 13px; background: #3a2a10;
-            color: #ffb84d; border-bottom: 1px solid #5a4520; }
+  .banner { display: none; padding: 8px 16px; font-size: 12.5px; background: #3a2a10;
+            color: #ffb84d; border-bottom: 1px solid #5a4520; cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .banner.show { display: block; }
+  .banner.expanded { white-space: normal; }
 
   main { max-width: 1000px; margin: 0 auto; padding: 16px; display: flex;
          flex-direction: column; gap: 20px; }
@@ -87,8 +90,13 @@ PAGE = r"""<!doctype html>
   .alt-wait { font-weight: 700; font-variant-numeric: tabular-nums; }
 
   .board { display: flex; flex-direction: column; gap: 12px; }
-  .toolbar { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .tabs, .chips, .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .toolbar { position: sticky; top: var(--head-h, 0px); z-index: 6; display: flex; gap: 8px;
+    align-items: center; margin: 0 -16px; padding: 8px 16px; background: var(--bg);
+    border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .toolbar::-webkit-scrollbar { display: none; }
+  .tabs, .chips { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+  .sep { flex: 0 0 auto; width: 1px; height: 20px; background: var(--line); }
+  #sortSelect { flex: 0 0 auto; }
   .tab, .chip { background: var(--card); border: 1px solid var(--line); color: var(--muted);
     border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
   .tab.active, .chip.active { background: var(--card2); color: var(--txt); border-color: var(--accent); }
@@ -125,9 +133,14 @@ PAGE = r"""<!doctype html>
 
   @media (max-width: 560px) {
     h1 { font-size: 16px; }
+    main { padding: 12px; gap: 14px; }
+    .toolbar { margin: 0 -12px; padding: 8px 12px; }
+    .hero-card { padding: 14px; }
     .hero-name { font-size: 20px; }
     .alt-row { grid-template-columns: 24px 1fr auto auto; }
+    .alt-row:nth-child(4) { display: none; }  /* 3 alternatives maxi sur mobile */
     .alt-zone { display: none; }
+    .badge { font-size: 11px; padding: 3px 8px; }
     .row { padding: 9px 12px; }
   }
 </style>
@@ -157,18 +170,18 @@ PAGE = r"""<!doctype html>
   <section class="board">
     <div class="toolbar">
       <div class="tabs" id="parkTabs"></div>
-      <div class="tools">
-        <div class="chips" id="filters">
-          <button class="chip active" data-filter="all">Toutes</button>
-          <button class="chip" data-filter="open">Ouvertes</button>
-          <button class="chip" data-filter="p3">🔥 Priorité 3</button>
-        </div>
-        <select id="sortSelect">
-          <option value="wait">Tri : attente</option>
-          <option value="prio">Tri : priorité</option>
-          <option value="zone">Tri : zone</option>
-        </select>
+      <span class="sep"></span>
+      <div class="chips" id="filters">
+        <button class="chip active" data-filter="all">Toutes</button>
+        <button class="chip" data-filter="open">Ouvertes</button>
+        <button class="chip" data-filter="p3">🔥 Priorité 3</button>
       </div>
+      <span class="sep"></span>
+      <select id="sortSelect">
+        <option value="wait">Tri : attente</option>
+        <option value="prio">Tri : priorité</option>
+        <option value="zone">Tri : zone</option>
+      </select>
     </div>
     <div id="board"></div>
   </section>
@@ -222,15 +235,23 @@ function renderParks(data) {
   }).join("");
 }
 
+function syncHeadHeight() {
+  const head = document.querySelector("header.top");
+  document.documentElement.style.setProperty("--head-h", head.offsetHeight + "px");
+}
+
 function renderBanner(data) {
   const el = document.getElementById("banner");
   if (data.hours_warning) {
     el.textContent = "🗓️ " + data.hours_warning;
+    el.title = data.hours_warning;
     el.classList.add("show");
   } else {
-    el.classList.remove("show");
+    el.classList.remove("show", "expanded");
     el.textContent = "";
+    el.removeAttribute("title");
   }
+  syncHeadHeight();
 }
 
 function renderZones(data) {
@@ -375,6 +396,11 @@ document.getElementById("filters").addEventListener("click", e => {
 document.getElementById("sortSelect").addEventListener("change", e => {
   ui.sort = e.target.value; renderBoard(LATEST);
 });
+document.getElementById("banner").addEventListener("click", e => e.currentTarget.classList.toggle("expanded"));
+window.addEventListener("resize", syncHeadHeight);
+window.addEventListener("load", syncHeadHeight);
+syncHeadHeight();
+
 document.getElementById("zoneSelect").addEventListener("change", async e => {
   await fetch("/api/zone", { method: "POST", headers: { "Content-Type": "application/json" },
                              body: JSON.stringify({ zone: e.target.value || null }) });
