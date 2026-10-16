@@ -90,9 +90,12 @@ PAGE = r"""<!doctype html>
   .alt-wait { font-weight: 700; font-variant-numeric: tabular-nums; }
 
   .board { display: flex; flex-direction: column; gap: 12px; }
-  .toolbar { position: sticky; top: var(--head-h, 0px); z-index: 6; display: flex; gap: 8px;
-    align-items: center; margin: 0 -16px; padding: 8px 16px; background: var(--bg);
-    border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .toolbar-wrap { position: sticky; top: var(--head-h, 0px); z-index: 6; background: var(--bg);
+    border-bottom: 1px solid var(--line); margin: 0 -16px; }
+  .toolbar-wrap::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 22px;
+    pointer-events: none; background: linear-gradient(90deg, transparent, var(--bg)); }
+  .toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 16px;
+    overflow-x: auto; scrollbar-width: none; }
   .toolbar::-webkit-scrollbar { display: none; }
   .tabs, .chips { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
   .sep { flex: 0 0 auto; width: 1px; height: 20px; background: var(--line); }
@@ -133,8 +136,10 @@ PAGE = r"""<!doctype html>
 
   @media (max-width: 560px) {
     h1 { font-size: 16px; }
+    body { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
     main { padding: 12px; gap: 14px; }
-    .toolbar { margin: 0 -12px; padding: 8px 12px; }
+    .toolbar-wrap { margin: 0 -12px; }
+    .toolbar { padding: 8px 12px; }
     .hero-card { padding: 14px; }
     .hero-name { font-size: 20px; }
     .alt-row { grid-template-columns: 24px 1fr auto auto; }
@@ -168,20 +173,22 @@ PAGE = r"""<!doctype html>
   </section>
 
   <section class="board">
-    <div class="toolbar">
-      <div class="tabs" id="parkTabs"></div>
-      <span class="sep"></span>
-      <div class="chips" id="filters">
-        <button class="chip active" data-filter="all">Toutes</button>
-        <button class="chip" data-filter="open">Ouvertes</button>
-        <button class="chip" data-filter="p3">🔥 Priorité 3</button>
+    <div class="toolbar-wrap">
+      <div class="toolbar">
+        <div class="tabs" id="parkTabs"></div>
+        <span class="sep"></span>
+        <div class="chips" id="filters">
+          <button class="chip active" data-filter="all">Toutes</button>
+          <button class="chip" data-filter="open">Ouvertes</button>
+          <button class="chip" data-filter="p3">🔥 Priorité 3</button>
+        </div>
+        <span class="sep"></span>
+        <select id="sortSelect">
+          <option value="wait">Tri : attente</option>
+          <option value="prio">Tri : priorité</option>
+          <option value="zone">Tri : zone</option>
+        </select>
       </div>
-      <span class="sep"></span>
-      <select id="sortSelect">
-        <option value="wait">Tri : attente</option>
-        <option value="prio">Tri : priorité</option>
-        <option value="zone">Tri : zone</option>
-      </select>
     </div>
     <div id="board"></div>
   </section>
@@ -274,6 +281,9 @@ function renderHero(data) {
   }
   const r = recos[0];
   const [a, cls] = ARROW[r.trend_label] || ["→", "flat"];
+  // La marche est déjà affichée dans la ligne meta : on n'affiche la raison que si elle
+  // apporte autre chose (tendance, fermeture…).
+  const why = /^(\d+ min de marche|dans ta zone)$/.test(r.reason) ? "" : r.reason;
   hero.innerHTML = `<div class="hero-card">
     <div class="hero-rank">🥇 Meilleur choix</div>
     <div class="hero-name">${esc(r.name)}</div>
@@ -282,7 +292,7 @@ function renderHero(data) {
       <span class="arrow ${cls}">${a}</span> · ${esc(r.zone)} · ${r.travel_minutes} min de marche
     </div>
     <div class="hero-meter"><span class="${waitClass(r.wait_minutes)}" style="width:${barPct(r.wait_minutes)}%"></span></div>
-    <div class="hero-why">${esc(r.reason)}</div>
+    ${why ? `<div class="hero-why">${esc(why)}</div>` : ""}
   </div>`;
   const medals = ["🥈", "🥉", "4.", "5."];
   alt.innerHTML = recos.slice(1, 5).map((x, i) => {
