@@ -114,7 +114,16 @@ python main.py
 
 ## Dashboard
 
-Page web auto-rafraîchie (60 s) accessible en LAN **et via Tailscale** : recommandations du moment, tableau live coloré (vert < 15 min, orange 15–40, rouge > 40), sélecteur de zone, attribution queue-times.
+Page web auto-rafraîchie (60 s) accessible en LAN **et via Tailscale**, pensée **mobile-first** :
+
+- un **héros** « Meilleur choix » (attente, tendance, marche, raison) + les alternatives en pastilles ;
+- un **board compact** par parc, avec **barre proportionnelle** et couleur pilotée par le seuil d'alerte réel (pas de seuils codés en dur) ;
+- **filtres** (Toutes / Ouvertes / Priorité 3), **tri** (attente / priorité / zone) et onglets par parc ;
+- attractions **fermées repliées** dans un bloc dépliable ;
+- **pastilles de phase par parc**, **indicateur de fraîcheur** (« maj il y a X s »), **bouton ♻️ Actualiser** (poll immédiat) ;
+- **banderole** de rappel quand les horaires sont estimés/non vérifiés.
+
+Fichier unique (HTML inline + JS vanilla, aucun build). Endpoints : `GET /`, `GET /api/state`, `POST /api/refresh`, `POST /api/zone`, `GET /healthz`.
 
 ---
 

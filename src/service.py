@@ -352,6 +352,7 @@ class KairosService:
             "phase": self.hours.phase(now),
             "minutes_to_close": self.hours.minutes_to_close(now),
             "hours_warning": self.hours_warning(),
+            "alert_threshold": self.alerter.default_threshold(),
             "mode": self.mode,
             "current_zone": self.current_zone(),
             "zones": self.zones(),
