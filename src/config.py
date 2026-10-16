@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     hours_config: str = "config/hours.json"
     zones_config: str = "config/zones.json"
 
+    # Ressources des attractions (fiche : image + description + crédit)
+    rides_images_dir: str = "static/rides"
+    descriptions_config: str = "config/rides_descriptions.json"
+    credits_config: str = "config/rides_credits.json"
+
     # Attribution (obligatoire vis-à-vis de queue-times.com)
     attribution_text: str = "Powered by Queue-Times.com"
     attribution_url: str = "https://queue-times.com/en-US"

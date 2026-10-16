@@ -190,6 +190,23 @@ class Store:
             ).fetchall()
         return [(parse_iso(r["ts"]), r["wait"], bool(r["is_open"])) for r in rows]
 
+    def ride_open_waits(
+        self, ride_id: int, since: datetime | None = None
+    ) -> list[tuple[datetime, int]]:
+        """Toutes les attentes observées (attraction ouverte), pour le profil horaire."""
+        with self._lock:
+            if since is not None:
+                rows = self._conn.execute(
+                    "SELECT ts, wait FROM snapshots WHERE ride_id = ? AND is_open = 1 AND ts >= ? ORDER BY ts",
+                    (ride_id, iso(since)),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT ts, wait FROM snapshots WHERE ride_id = ? AND is_open = 1 ORDER BY ts",
+                    (ride_id,),
+                ).fetchall()
+        return [(parse_iso(r["ts"]), r["wait"]) for r in rows]
+
     def prune_snapshots(self, before: datetime) -> int:
         with self._lock:
             cur = self._conn.execute("DELETE FROM snapshots WHERE ts < ?", (iso(before),))

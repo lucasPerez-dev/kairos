@@ -54,6 +54,15 @@ def test_page_and_state(tmp_path) -> None:
     assert "phase" in body["parks"][0]
 
 
+def test_ride_endpoint(tmp_path) -> None:
+    client, _service, _fetcher = _client(tmp_path)
+    body = client.get("/api/ride/1").json()
+    for key in ("name", "description", "image", "credit", "hourly", "best_hour", "wait_minutes"):
+        assert key in body
+    assert body["name"] == "Dragon Khan"
+    assert client.get("/api/ride/9999").status_code == 404
+
+
 def test_refresh_triggers_poll(tmp_path) -> None:
     client, service, fetcher = _client(tmp_path)
     # On force le poll même si le parc est fermé, pour vérifier que l'endpoint déclenche bien.

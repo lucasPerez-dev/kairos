@@ -7,8 +7,11 @@ tableau scannable avec barres proportionnelles et filtres.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
 from .service import KairosService
@@ -111,7 +114,8 @@ PAGE = r"""<!doctype html>
   .park-head .sum { font-size: 12px; color: var(--muted); text-align: right; }
 
   .row { position: relative; display: grid; grid-template-columns: 1fr auto auto; gap: 12px;
-         align-items: center; padding: 9px 14px; border-bottom: 1px solid #1f2840; overflow: hidden; }
+         align-items: center; padding: 9px 14px; border-bottom: 1px solid #1f2840; overflow: hidden;
+         cursor: pointer; }
   .row:last-child { border-bottom: none; }
   .row .meter { position: absolute; left: 0; top: 0; bottom: 0; opacity: .13; }
   .row .meter.green { background: var(--green); }
@@ -125,6 +129,37 @@ PAGE = r"""<!doctype html>
   .row.is-closed { opacity: .55; }
   details.closed summary { cursor: pointer; padding: 9px 14px; color: var(--muted); font-size: 13px; }
   .empty { color: var(--muted); padding: 16px; text-align: center; }
+
+  /* Fiche attraction (bottom-sheet) */
+  .sheet-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.55);
+    opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .sheet-backdrop.show { opacity: 1; pointer-events: auto; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; background: var(--card);
+    border: 1px solid var(--line); border-bottom: none;
+    border-top-left-radius: 16px; border-top-right-radius: 16px;
+    max-height: 85vh; overflow-y: auto; transform: translateY(100%); transition: transform .25s ease;
+    padding: 6px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .sheet.show { transform: translateY(0); }
+  .sheet-grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 8px auto 10px; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .sheet-head h3 { margin: 0; font-size: 19px; }
+  .sheet-close { background: var(--card2); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 8px; padding: 4px 10px; font-size: 14px; cursor: pointer; }
+  .sheet-img { width: 100%; max-height: 240px; object-fit: cover; border-radius: 10px;
+    margin: 10px 0; background: var(--card2); display: block; }
+  .sheet-live { font-size: 14px; margin: 8px 0; }
+  .sheet-facts { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .fact { background: var(--card2); color: var(--muted); border-radius: 999px; padding: 3px 9px; font-size: 12px; }
+  .sheet-desc { font-size: 14px; line-height: 1.5; margin: 12px 0 4px; }
+  .profile { display: flex; align-items: flex-end; gap: 3px; height: 96px; margin: 16px 0 2px; }
+  .pcol { flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+    align-items: center; height: 100%; gap: 3px; }
+  .pbar { width: 100%; border-radius: 3px 3px 0 0; background: var(--green); min-height: 3px; }
+  .pbar.amber { background: var(--amber); }
+  .pbar.red { background: var(--red); }
+  .plbl { font-size: 9px; color: var(--muted); }
+  .profile-note { font-size: 12px; color: var(--muted); }
+  .sheet-credit { font-size: 11px; color: var(--muted); margin-top: 14px; }
 
   .w { font-weight: 700; font-variant-numeric: tabular-nums; }
   .w.green { color: var(--green); } .w.amber { color: var(--amber); } .w.red { color: var(--red); }
@@ -199,6 +234,16 @@ PAGE = r"""<!doctype html>
   <span id="updated"></span>
   <span id="err" class="err"></span>
 </footer>
+
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<aside class="sheet" id="sheet" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="sheet-grab"></div>
+  <div class="sheet-head">
+    <h3 id="sheetTitle">—</h3>
+    <button class="sheet-close" id="sheetClose" aria-label="Fermer">✕</button>
+  </div>
+  <div class="sheet-body" id="sheetBody"></div>
+</aside>
 
 <script>
 const PHASE_LABELS = {
@@ -322,7 +367,7 @@ function rowHtml(r, closed = false) {
   const wc = r.is_open ? waitClass(r.wait_minutes) : "";
   const value = r.is_open ? `${fmtWait(r.wait_minutes)} <span class="arrow ${cls}">${a}</span>` : "fermé";
   const meter = r.is_open ? `<span class="meter ${wc}" style="width:${barPct(r.wait_minutes)}%"></span>` : "";
-  return `<div class="row ${r.is_open ? "" : "is-closed"}">
+  return `<div class="row ${r.is_open ? "" : "is-closed"}" data-ride="${r.id}">
     ${meter}
     <span class="rname"><span class="cnm">${icon} ${esc(r.name)}</span><span class="czone">${esc(r.zone)}</span></span>
     <span class="rwait ${wc}">${value}</span>
@@ -391,6 +436,83 @@ async function load() {
   } catch (e) { document.getElementById("err").textContent = String(e); }
 }
 
+/* -------------------------------------------------- fiche attraction --- */
+
+const sheet = document.getElementById("sheet");
+const sheetBackdrop = document.getElementById("sheetBackdrop");
+const sheetBody = document.getElementById("sheetBody");
+const sheetTitle = document.getElementById("sheetTitle");
+
+function closeSheet() {
+  sheet.classList.remove("show");
+  sheetBackdrop.classList.remove("show");
+  sheet.setAttribute("aria-hidden", "true");
+}
+
+function renderProfile(hourly) {
+  const byHour = Object.fromEntries(hourly.map(p => [p.hour, p]));
+  let html = '<div class="profile">';
+  for (let h = 10; h <= 23; h++) {
+    const p = byHour[h];
+    const v = p ? p.avg : null;
+    const pct = v == null ? 0 : Math.min(100, v / 60 * 100);
+    const cls = v == null ? "" : waitClass(v);
+    const title = h + "h : " + (v == null ? "pas de donnée" : v + " min");
+    html += `<div class="pcol" title="${title}">` +
+            `<span class="pbar ${cls}" style="height:${Math.max(3, pct)}%"></span>` +
+            `<span class="plbl">${h}</span></div>`;
+  }
+  return html + "</div>";
+}
+
+function sheetHtml(d) {
+  const icon = CAT_ICON[d.category] || "";
+  const [a, cls] = ARROW[d.trend_label] || ["→", "flat"];
+  const live = d.is_open
+    ? `<span class="w ${waitClass(d.wait_minutes)}">${fmtWait(d.wait_minutes)}</span> <span class="arrow ${cls}">${a}</span>`
+    : "fermé";
+  const img = d.image
+    ? `<img class="sheet-img" src="${esc(d.image)}" alt="${esc(d.name)}" loading="lazy">` : "";
+  const facts = ["priorité " + d.priority, d.zone, d.park_name, (icon + " " + d.category).trim()]
+    .map(f => `<span class="fact">${esc(f)}</span>`).join("");
+  const desc = d.description
+    ? `<p class="sheet-desc">${esc(d.description)}</p>`
+    : `<p class="sheet-desc"><i>${esc((icon + " " + d.category).trim())} · ${esc(d.zone)} · priorité ${d.priority}</i></p>`;
+  const best = d.best_hour != null
+    ? `<div class="profile-note">Le plus calme : <b>${d.best_hour}h</b> (moyenne historique)</div>` : "";
+  const prof = (d.hourly && d.hourly.length) ? renderProfile(d.hourly) : "";
+  const credit = d.credit
+    ? `<div class="sheet-credit">Photo : ${esc(d.credit.author || "?")}${d.credit.license ? " (" + esc(d.credit.license) + ")" : ""}</div>`
+    : "";
+  return `${img}<div class="sheet-live">Attente : ${live}</div>` +
+         `<div class="sheet-facts">${facts}</div>${desc}${best}${prof}${credit}`;
+}
+
+async function openSheet(id) {
+  sheetTitle.textContent = "Chargement…";
+  sheetBody.innerHTML = "";
+  sheet.classList.add("show");
+  sheetBackdrop.classList.add("show");
+  sheet.setAttribute("aria-hidden", "false");
+  try {
+    const res = await fetch("/api/ride/" + id, { cache: "no-store" });
+    if (!res.ok) throw new Error("introuvable");
+    const d = await res.json();
+    sheetTitle.textContent = d.name;
+    sheetBody.innerHTML = sheetHtml(d);
+  } catch (e) {
+    sheetBody.innerHTML = `<p class="empty">Fiche indisponible : ${esc(String(e))}</p>`;
+  }
+}
+
+document.getElementById("board").addEventListener("click", e => {
+  const row = e.target.closest("[data-ride]");
+  if (row) openSheet(row.dataset.ride);
+});
+document.getElementById("sheetClose").addEventListener("click", closeSheet);
+sheetBackdrop.addEventListener("click", closeSheet);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+
 document.getElementById("parkTabs").addEventListener("click", e => {
   const btn = e.target.closest("[data-park]");
   if (btn) { ui.park = btn.dataset.park; renderBoard(LATEST); }
@@ -435,6 +557,11 @@ setInterval(() => { if (!document.hidden) load(); }, 60000);
 def build_dashboard(service: KairosService, settings: Settings) -> FastAPI:
     app = FastAPI(title="Kairos", docs_url=None, redoc_url=None)
 
+    # Images des attractions : /static/rides/<id>.<ext>
+    static_root = Path(service.images_dir).parent
+    static_root.mkdir(parents=True, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=str(static_root), check_dir=False), name="static")
+
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
         return HTMLResponse(PAGE)
@@ -442,6 +569,13 @@ def build_dashboard(service: KairosService, settings: Settings) -> FastAPI:
     @app.get("/api/state")
     async def state() -> JSONResponse:
         return JSONResponse(service.state_payload())
+
+    @app.get("/api/ride/{ride_id}")
+    async def ride(ride_id: int) -> JSONResponse:
+        detail = service.ride_detail(ride_id)
+        if detail is None:
+            return JSONResponse({"error": "introuvable"}, status_code=404)
+        return JSONResponse(detail)
 
     @app.post("/api/refresh")
     async def refresh() -> JSONResponse:

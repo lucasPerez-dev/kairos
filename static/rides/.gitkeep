@@ -1,0 +1,2 @@
+# Images des attractions, nommées <id>.<ext> (id queue-times).
+# Ex. 593.jpg = Dragon Khan. Voir tools/rides_media.py (report / fetch).

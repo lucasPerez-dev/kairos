@@ -3,18 +3,31 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from .alerts import Alerter
-from .config import Settings
+from .config import Settings, load_json
 from .engine import Engine, trend_arrow
 from .fetcher import QueueTimesFetcher
 from .models import Ride
 from .park_hours import ParkHours
 from .store import Store, iso, utcnow
+
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _load_map(path: str | Path) -> dict[str, Any]:
+    """Charge un fichier JSON id→valeur, en ignorant les clés de commentaire. Silencieux si absent."""
+    try:
+        data = load_json(path)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {k: v for k, v in data.items() if not str(k).startswith("_")}
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +83,10 @@ class KairosService:
         self._first_poll = True
         self.last_poll: datetime | None = None
         self.last_error: str | None = None
+        # Fiches attraction : descriptions, crédits photo et dossier d'images.
+        self.descriptions = _load_map(settings.resolve(settings.descriptions_config))
+        self.credits = _load_map(settings.resolve(settings.credits_config))
+        self.images_dir = settings.resolve(settings.rides_images_dir)
 
     # ------------------------------------------------------------ info --- #
 
@@ -119,6 +136,63 @@ class KairosService:
 
     def zones(self) -> list[str]:
         return list(self.engine.zones.coords.keys())
+
+    # ------------------------------------------------------- fiche ride --- #
+
+    def ride_image_file(self, ride_id: int) -> Path | None:
+        for ext in IMAGE_EXTS:
+            candidate = self.images_dir / f"{ride_id}{ext}"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def ride_image_url(self, ride_id: int) -> str | None:
+        path = self.ride_image_file(ride_id)
+        return f"/static/{self.images_dir.name}/{path.name}" if path else None
+
+    def hourly_profile(
+        self, ride_id: int, now: datetime | None = None, days: int = 30
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        """Attente moyenne par heure locale, depuis l'historique. Renvoie (profil, meilleure heure)."""
+        now = now or utcnow()
+        rows = self.store.ride_open_waits(ride_id, now - timedelta(days=days))
+        buckets: dict[int, list[int]] = {}
+        for ts, wait in rows:
+            buckets.setdefault(self.hours.local(ts).hour, []).append(wait)
+        profile = [
+            {"hour": hour, "avg": round(sum(waits) / len(waits)), "n": len(waits)}
+            for hour, waits in sorted(buckets.items())
+        ]
+        best = min(profile, key=lambda p: p["avg"])["hour"] if profile else None
+        return profile, best
+
+    def ride_detail(self, ride_id: int) -> dict[str, Any] | None:
+        """Fiche complète d'une attraction (pour le dashboard)."""
+        ride = next((r for r in self.store.rides(include_hidden=True) if r.id == ride_id), None)
+        if ride is None:
+            return None
+        now = utcnow()
+        snap = self.store.latest().get(ride_id)
+        profile, best_hour = self.hourly_profile(ride_id, now)
+        trend, trend_label = self.engine.trend(ride_id, now)
+        return {
+            "id": ride.id,
+            "name": ride.name,
+            "park": ride.park,
+            "park_name": self.park_name(ride.park),
+            "zone": ride.zone,
+            "category": ride.category,
+            "priority": ride.priority,
+            "is_open": bool(snap and snap["is_open"]),
+            "wait_minutes": snap["wait"] if snap else None,
+            "trend": trend,
+            "trend_label": trend_label,
+            "image": self.ride_image_url(ride.id),
+            "description": self.descriptions.get(str(ride.id)),
+            "credit": self.credits.get(str(ride.id)),
+            "hourly": profile,
+            "best_hour": best_hour,
+        }
 
     # ---------------------------------------------------------- polling --- #
 
@@ -344,6 +418,7 @@ class KairosService:
                     "score": status.score if math.isfinite(status.score) else None,
                     "travel_minutes": round(status.travel_minutes, 1),
                     "updated": iso(status.updated) if status.updated else None,
+                    "image": self.ride_image_url(status.ride.id),
                 }
             )
 

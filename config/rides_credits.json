@@ -1,0 +1,4 @@
+{
+  "_comment": "Crédits photo par id d'attraction, remplis par tools/rides_media.py fetch (Wikimedia Commons). Format : { \"author\": \"...\", \"license\": \"...\", \"source\": \"...\" }. Affichés discrètement dans la fiche.",
+  "_format": { "author": "Nom / pseudo", "license": "CC BY-SA 4.0", "source": "https://commons.wikimedia.org/wiki/File:..." }
+}

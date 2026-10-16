@@ -123,7 +123,16 @@ Page web auto-rafraîchie (60 s) accessible en LAN **et via Tailscale**, pensée
 - **pastilles de phase par parc**, **indicateur de fraîcheur** (« maj il y a X s »), **bouton ♻️ Actualiser** (poll immédiat) ;
 - **banderole** de rappel quand les horaires sont estimés/non vérifiés.
 
-Fichier unique (HTML inline + JS vanilla, aucun build). Endpoints : `GET /`, `GET /api/state`, `POST /api/refresh`, `POST /api/zone`, `GET /healthz`.
+Fichier unique (HTML inline + JS vanilla, aucun build). Endpoints : `GET /`, `GET /api/state`, `GET /api/ride/{id}`, `POST /api/refresh`, `POST /api/zone`, `GET /healthz`. Les images sont servies depuis `/static/rides/`.
+
+## Fiches attraction
+
+Un **tap sur une ligne** du board ouvre une fiche (bottom-sheet) : photo, faits (catégorie, zone, parc, priorité), attente en direct, **profil horaire** (attente moyenne par heure, calculée depuis l'historique) et « meilleur créneau », plus une courte description.
+
+- **Images** : `static/rides/<id>.<ext>` (id queue-times). Commitées dans git. Absentes → l'icône de catégorie s'affiche.
+- **Descriptions** : `config/rides_descriptions.json` (id → texte).
+- **Crédits photo** : `config/rides_credits.json` (id → auteur / licence / source).
+- **Outil** : `python tools/rides_media.py report` (liste les manquants) puis `fetch` (récupère les images manquantes depuis Wikimedia Commons et remplit les crédits).
 
 ---
 
@@ -193,6 +202,8 @@ Automatique si tu es passé par `deploy/install.sh` (cron quotidien à 04:00). S
 - **Vérifier la config** : `python tools/check_config.py` (n'affiche jamais le token en clair).
 - **Auditer les attractions** : `python tools/audit_rides.py` lit l'historique et propose
   les attractions fantômes à masquer, les priorités et seuils à ajuster (commandes prêtes à copier).
+- **Fiches (images/descriptions)** : `python tools/rides_media.py report` puis
+  `python tools/rides_media.py fetch` (images depuis Wikimedia Commons, crédits automatiques).
 - **Tests** : `pytest`.
 
 ## Dépannage
