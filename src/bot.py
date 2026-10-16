@@ -452,6 +452,9 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
     if service.last_error:
         lines.append(f"⚠️ Dernière erreur : <code>{esc_text(service.last_error)}</code>")
+    warning = service.hours_warning()
+    if warning:
+        lines.append(f"🗓️ {esc_text(warning)}")
     await _reply(update, "\n".join(lines), InlineKeyboardMarkup([[_back_menu()]]))
 
 

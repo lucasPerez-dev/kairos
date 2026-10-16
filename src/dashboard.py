@@ -30,6 +30,17 @@ PAGE = """<!doctype html>
   .badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .badge { background: var(--card2); padding: 4px 10px; border-radius: 999px; font-size: 12px; color: var(--muted); }
   .badge.phase { color: var(--txt); }
+  .parks { display: flex; gap: 8px; flex-wrap: wrap; }
+  .park { display: inline-flex; align-items: center; gap: 6px; background: var(--card2);
+          padding: 4px 10px; border-radius: 999px; font-size: 12px; color: var(--muted); }
+  .park .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .park.open .dot { background: var(--green); }
+  .park.closing .dot { background: var(--amber); }
+  .park.closed .dot { background: var(--red); }
+  .park .pn { color: var(--txt); }
+  .banner { display: none; align-items: center; gap: 8px; padding: 10px 20px; font-size: 13px;
+            background: #3a2a10; color: #ffb84d; border-bottom: 1px solid #5a4520; }
+  .banner.show { display: flex; }
   select { background: var(--card2); color: var(--txt); border: 1px solid #33405f;
            border-radius: 8px; padding: 6px 8px; font-size: 13px; }
   main { padding: 20px; max-width: 1100px; margin: 0 auto; }
@@ -67,11 +78,13 @@ PAGE = """<!doctype html>
   <h1>🎢 Kairos <span>· PortAventura World</span></h1>
   <div class="badges">
     <span class="badge phase" id="phase">—</span>
+    <span class="parks" id="parks"></span>
     <span class="badge" id="mode">—</span>
     <select id="zoneSelect" title="Zone actuelle"></select>
     <span class="badge" id="poll">—</span>
   </div>
 </header>
+<div class="banner" id="banner"></div>
 <main>
   <div class="recos" id="recos"></div>
   <div class="grid" id="grid"></div>
@@ -143,6 +156,35 @@ function renderZones(data) {
     data.zones.map(z => `<option value="${esc(z)}" ${z === current ? "selected" : ""}>${esc(z)}</option>`).join("");
 }
 
+function phaseClass(phase) {
+  if (phase === "closing") return "closing";
+  if (phase === "opening" || phase === "peak" || phase === "afternoon") return "open";
+  return "closed";
+}
+
+function renderParks(data) {
+  const el = document.getElementById("parks");
+  el.innerHTML = (data.parks || []).map(p => {
+    const cls = phaseClass(p.phase);
+    let label = PHASE_LABELS[p.phase] || p.phase;
+    if (p.phase === "closing" && p.minutes_to_close != null && p.minutes_to_close > 0)
+      label += ` (${Math.round(p.minutes_to_close)} min)`;
+    return `<span class="park ${cls}"><span class="dot"></span>` +
+           `<span class="pn">${esc(p.name)}</span> <span class="ps">${esc(label)}</span></span>`;
+  }).join("");
+}
+
+function renderBanner(data) {
+  const el = document.getElementById("banner");
+  if (data.hours_warning) {
+    el.textContent = "🗓️ " + data.hours_warning;
+    el.classList.add("show");
+  } else {
+    el.classList.remove("show");
+    el.textContent = "";
+  }
+}
+
 async function load() {
   try {
     const res = await fetch("/api/state", { cache: "no-store" });
@@ -154,7 +196,7 @@ async function load() {
     document.getElementById("err").textContent = data.last_error || "";
     const attr = document.getElementById("attr");
     attr.innerHTML = `<a href="${data.attribution.url}" target="_blank" rel="noopener">${data.attribution.text}</a>`;
-    renderZones(data); renderRecos(data); renderGrid(data);
+    renderZones(data); renderParks(data); renderBanner(data); renderRecos(data); renderGrid(data);
   } catch (e) { document.getElementById("err").textContent = String(e); }
 }
 

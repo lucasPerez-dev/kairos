@@ -80,6 +80,22 @@ def test_overnight_close() -> None:
     assert h.minutes_to_close(_at("2026-10-31", "23:30"), "portaventura") == 30.0
 
 
+def test_staleness_warning() -> None:
+    now = _at("2026-10-20", "12:00")
+    unverified = ParkHours({**CONFIG, "_verified": False, "_updated": "2026-10-16"}, "Europe/Madrid")
+    assert unverified.staleness_warning(now)
+
+    verified_recent = ParkHours(
+        {**CONFIG, "_verified": True, "_updated": "2026-10-16"}, "Europe/Madrid"
+    )
+    assert verified_recent.staleness_warning(now) is None
+
+    verified_old = ParkHours(
+        {**CONFIG, "_verified": True, "_updated": "2026-01-01"}, "Europe/Madrid"
+    )
+    assert "jours" in (verified_old.staleness_warning(now) or "")
+
+
 def test_legacy_flat_config_still_supported() -> None:
     h = ParkHours(
         {"timezone": "Europe/Madrid", "default": {"open": "10:00", "close": "20:00"}},

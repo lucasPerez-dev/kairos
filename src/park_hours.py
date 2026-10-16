@@ -76,6 +76,9 @@ class _Schedule:
 class ParkHours:
     def __init__(self, config: dict, timezone: str) -> None:
         self.tz = ZoneInfo(timezone)
+        # Métadonnées de maintenance : servent au rappel « pense à mettre à jour les horaires ».
+        self.updated = str(config["_updated"]) if config.get("_updated") else None
+        self.verified = bool(config.get("_verified", False))
         parks = config.get("parks")
         if parks:
             self._schedules: dict[str, _Schedule] = {
@@ -159,6 +162,29 @@ class ParkHours:
 
     def is_open_now(self, now: datetime, park: str | None = None) -> bool:
         return self.phase(now, park) in ("opening", "peak", "afternoon", "closing")
+
+    def staleness_warning(self, now: datetime, max_age_days: int = 30) -> str | None:
+        """Rappel à afficher tant que les horaires n'ont pas été confirmés ou rafraîchis.
+
+        Renvoie ``None`` quand tout est bon. Sinon le message à montrer à l'utilisateur.
+        """
+        if not self.verified:
+            return (
+                "Horaires estimés, non confirmés — vérifie config/hours.json "
+                "(PortAventura et Ferrari Land changent selon la saison)."
+            )
+        if self.updated:
+            try:
+                updated = date.fromisoformat(self.updated)
+            except ValueError:
+                return None
+            age = (self.local(now).date() - updated).days
+            if age > max_age_days:
+                return (
+                    f"Horaires mis à jour il y a {age} jours — à revérifier "
+                    "(changement de saison ?)."
+                )
+        return None
 
     def next_opening(self, now: datetime) -> datetime | None:
         """Prochaine ouverture (aujourd'hui ou dans les jours suivants), toutes parcs confondus."""

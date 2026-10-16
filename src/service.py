@@ -86,6 +86,10 @@ class KairosService:
     def phase_label(self, now: datetime | None = None) -> str:
         return PHASE_LABELS.get(self.hours.phase(now or utcnow()), "—")
 
+    def hours_warning(self) -> str | None:
+        """Rappel « mets à jour les horaires », ou None si tout est à jour."""
+        return self.hours.staleness_warning(utcnow())
+
     def rides(self) -> list[Ride]:
         return self.store.rides()
 
@@ -293,6 +297,10 @@ class KairosService:
                 lines.append(f"• <b>{esc(reco.ride.name)}</b> — {wait} · {esc(reco.ride.zone)}")
         lines.append("")
         lines.append("<i>Astuce : les grosses attractions sont les plus calmes à l'ouverture et en fin de journée.</i>")
+        warning = self.hours.staleness_warning(now)
+        if warning:
+            lines.append("")
+            lines.append(f"⚠️ <i>{esc(warning)}</i>")
         return "\n".join(lines)
 
     def format_closing_reminder(self, minutes_to_close: float, park: str | None = None) -> str:
@@ -343,6 +351,7 @@ class KairosService:
             "generated_at": iso(now),
             "phase": self.hours.phase(now),
             "minutes_to_close": self.hours.minutes_to_close(now),
+            "hours_warning": self.hours_warning(),
             "mode": self.mode,
             "current_zone": self.current_zone(),
             "zones": self.zones(),

@@ -1,5 +1,7 @@
 {
   "_comment": "Horaires par parc. Résolution par parc/date : 'closed' > 'days[date]' > 'weekly[jour]' > 'default'. Une fermeture <= ouverture est lue comme 'après minuit' (ex. close 00:00). Valeurs actuelles = saison Halloween 2026 : à ajuster selon la période (PortAventura ferme 7j/7 jusqu'à début novembre ; nov-déc surtout les week-ends ; fermeture annuelle mi-janvier à fin mars).",
+  "_updated": "2026-10-16",
+  "_verified": false,
   "timezone": "Europe/Madrid",
   "parks": {
     "portaventura": {
