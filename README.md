@@ -62,7 +62,7 @@ Autres fichiers de configuration, éditables :
 
 - `config/rides.json` — les 60 attractions (id, nom, parc, zone, catégorie, priorité)
 - `config/zones.json` — modèle de marche entre zones
-- `config/hours.json` — horaires d'ouverture *(à mettre à jour avant le séjour : le parc publie les horaires définitifs tardivement)*
+- `config/hours.json` — horaires d'ouverture **par parc**. Résolution `closed` > `days[date]` > `weekly[jour]` > `default`, avec gestion des nocturnes (fermeture ≤ ouverture lue comme « après minuit »). *(PortAventura et Ferrari Land ont des horaires différents — à ajuster selon la saison.)*
 
 ## Lancement
 

@@ -120,11 +120,17 @@ class Engine:
         now = now or datetime.now(timezone.utc)
         latest = self.store.latest()
         done = self.store.done_ids()
-        phase = self.hours.phase(now)
-        minutes_to_close = self.hours.minutes_to_close(now)
+        phases: dict[str, tuple[str, float | None]] = {}
 
         out: list[RideStatus] = []
         for ride in self.store.rides():
+            # Phase et fermeture propres au parc de l'attraction (horaires distincts).
+            if ride.park not in phases:
+                phases[ride.park] = (
+                    self.hours.phase(now, ride.park),
+                    self.hours.minutes_to_close(now, ride.park),
+                )
+            phase, minutes_to_close = phases[ride.park]
             snap = latest.get(ride.id)
             status = RideStatus(
                 ride=ride,
@@ -133,6 +139,8 @@ class Engine:
                 updated=snap["ts"] if snap else None,
                 done=ride.id in done,
                 travel_minutes=self.zones.travel_minutes(current_zone, ride.zone),
+                phase=phase,
+                minutes_to_close=minutes_to_close,
             )
             if with_trend:
                 status.trend, status.trend_label = self.trend(ride.id, now)
@@ -147,8 +155,6 @@ class Engine:
         now: datetime | None = None,
     ) -> list[Recommendation]:
         now = now or datetime.now(timezone.utc)
-        phase = self.hours.phase(now)
-        minutes_to_close = self.hours.minutes_to_close(now)
 
         candidates = [
             st for st in self.statuses(current_zone, now)
@@ -164,7 +170,7 @@ class Engine:
                 trend_delta=st.trend,
                 travel_minutes=round(st.travel_minutes, 1),
                 score=st.score,
-                reason=describe(st, phase, minutes_to_close, current_zone),
+                reason=describe(st, st.phase, st.minutes_to_close, current_zone),
             )
             for st in candidates[:limit]
         ]

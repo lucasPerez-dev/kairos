@@ -1,10 +1,25 @@
 {
-  "_comment": "Horaires d'ouverture. 'default' s'applique à TOUTE date absente de 'days' : on y met la plage récurrente la plus large (semaine 10:30-18:00, week-ends jusqu'à 20:00) pour couvrir un maximum de dates. 'days' ne sert qu'aux exceptions ponctuelles (fermeture, nocturne, horaire spécial). Valeurs estimées, à ajuster si besoin. Note : le poll est sauté hors de cette plage (skip_when_closed), donc une plage trop étroite = données manquantes, une plage trop large = seulement quelques polls à vide.",
+  "_comment": "Horaires par parc. Résolution par parc/date : 'closed' > 'days[date]' > 'weekly[jour]' > 'default'. Une fermeture <= ouverture est lue comme 'après minuit' (ex. close 00:00). Valeurs actuelles = saison Halloween 2026 : à ajuster selon la période (PortAventura ferme 7j/7 jusqu'à début novembre ; nov-déc surtout les week-ends ; fermeture annuelle mi-janvier à fin mars).",
   "timezone": "Europe/Madrid",
-  "default": { "open": "10:30", "close": "20:00", "estimated": true },
-  "days": {
-    "2027-04-02": { "open": "10:30", "close": "20:00", "estimated": true },
-    "2027-04-03": { "open": "10:30", "close": "20:00", "estimated": true },
-    "2027-04-04": { "open": "10:30", "close": "19:00", "estimated": true }
+  "parks": {
+    "portaventura": {
+      "weekly": {
+        "mon": { "open": "10:30", "close": "18:00" },
+        "tue": { "open": "10:30", "close": "18:00" },
+        "wed": { "open": "10:30", "close": "18:00" },
+        "thu": { "open": "10:30", "close": "18:00" },
+        "fri": { "open": "10:30", "close": "18:00" },
+        "sat": { "open": "10:30", "close": "23:00" },
+        "sun": { "open": "10:30", "close": "19:00" }
+      },
+      "days": {
+        "2026-10-31": { "open": "10:30", "close": "00:00" },
+        "2026-11-01": { "open": "10:30", "close": "23:30" }
+      },
+      "default": { "open": "10:30", "close": "18:00", "estimated": true }
+    },
+    "ferrari_land": {
+      "default": { "open": "16:30", "close": "22:00", "estimated": true }
+    }
   }
 }

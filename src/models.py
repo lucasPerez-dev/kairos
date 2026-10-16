@@ -43,6 +43,8 @@ class RideStatus:
     trend_label: str = "stable"   # rising | falling | stable
     travel_minutes: float = 0.0
     score: float = 0.0
+    phase: str = "unknown"        # phase du parc de l'attraction
+    minutes_to_close: float | None = None
 
 
 @dataclass

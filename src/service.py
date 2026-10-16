@@ -183,14 +183,18 @@ class KairosService:
             await self.notifier(self.format_briefing())
             self.store.set_state(f"briefing:{today}", True)
 
-        minutes_to_close = self.hours.minutes_to_close(now)
-        if (
-            minutes_to_close is not None
-            and 0 < minutes_to_close <= 60
-            and not self.store.get_state(f"closing:{today}")
-        ):
-            await self.notifier(self.format_closing_reminder(minutes_to_close))
-            self.store.set_state(f"closing:{today}", True)
+        # Rappel de fermeture parc par parc (PortAventura et Ferrari Land ne ferment pas pareil).
+        for park in (self.hours.parks() or [None]):
+            if self.hours.phase(now, park) not in ("opening", "peak", "afternoon", "closing"):
+                continue
+            minutes_to_close = self.hours.minutes_to_close(now, park)
+            if minutes_to_close is None or not (0 < minutes_to_close <= 60):
+                continue
+            key = f"closing:{park or 'global'}:{today}"
+            if self.store.get_state(key):
+                continue
+            await self.notifier(self.format_closing_reminder(minutes_to_close, park))
+            self.store.set_state(key, True)
 
     # --------------------------------------------------------- messages --- #
 
@@ -291,10 +295,13 @@ class KairosService:
         lines.append("<i>Astuce : les grosses attractions sont les plus calmes à l'ouverture et en fin de journée.</i>")
         return "\n".join(lines)
 
-    def format_closing_reminder(self, minutes_to_close: float) -> str:
+    def format_closing_reminder(self, minutes_to_close: float, park: str | None = None) -> str:
         statuses = self.engine.statuses(self.current_zone())
+        if park:
+            statuses = [s for s in statuses if s.ride.park == park]
         remaining = [s for s in statuses if not s.done and s.ride.priority >= 3]
-        lines = [f"⏳ <b>Le parc ferme dans {int(minutes_to_close)} min.</b>"]
+        label = esc(self.park_name(park)) if park else "Le parc"
+        lines = [f"⏳ <b>{label} ferme dans {int(minutes_to_close)} min.</b>"]
         if remaining:
             names = ", ".join(esc(s.ride.name) for s in remaining[:6])
             lines.append(f"Il reste : {names}")
@@ -339,7 +346,15 @@ class KairosService:
             "mode": self.mode,
             "current_zone": self.current_zone(),
             "zones": self.zones(),
-            "parks": [{"key": p["key"], "name": p["name"]} for p in self.parks],
+            "parks": [
+                {
+                    "key": p["key"],
+                    "name": p["name"],
+                    "phase": self.hours.phase(now, p["key"]),
+                    "minutes_to_close": self.hours.minutes_to_close(now, p["key"]),
+                }
+                for p in self.parks
+            ],
             "rides": rides_payload,
             "recommendations": [
                 {
