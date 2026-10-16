@@ -43,6 +43,8 @@ HELP_TEXT = (
     "/ajouter &lt;attraction&gt; / /retirer &lt;attraction&gt;\n"
     "/prio &lt;attraction&gt; &lt;1-3&gt; — régler la priorité\n"
     "/seuil [minutes] — voir/régler le seuil d'alerte\n"
+    "/masquer &lt;attraction&gt; — retirer des listes/recommandations\n"
+    "/afficher &lt;attraction&gt; — réafficher une attraction masquée\n"
     "/parc — occupation par parc\n"
     "/mode collect|trip — mode de fonctionnement\n"
     "/refresh — forcer une mise à jour\n"
@@ -111,6 +113,7 @@ def kb_menu() -> InlineKeyboardMarkup:
             [_btn("🎯 Où aller", "menu:reco"), _btn("📊 Temps d'attente", "menu:etat")],
             [_btn("📍 Ma zone", "menu:zone"), _btn("✅ Checklist", "menu:liste:0")],
             [_btn("⚙️ Réglages", "menu:reglages"), _btn("ℹ️ Aide", "menu:aide")],
+            [_btn("♻️ Actualiser", "menu:refresh")],
         ]
     )
 
@@ -134,7 +137,8 @@ def panel_menu(service: KairosService) -> tuple[str, InlineKeyboardMarkup]:
 def kb_reco(service: KairosService) -> InlineKeyboardMarkup:
     recos = service.engine.recommend(service.current_zone(), limit=3)
     rows = [[_btn(f"✅ {r.ride.name}", f"done:{r.ride.id}")] for r in recos]
-    rows.append([_btn("🔄 Autres", "menu:reco"), _back_menu()])
+    rows.append([_btn("♻️ Actualiser", "menu:refresh"), _btn("🔄 Autres", "menu:reco")])
+    rows.append([_back_menu()])
     return InlineKeyboardMarkup(rows)
 
 
@@ -231,6 +235,7 @@ def panel_reglages(service: KairosService) -> tuple[str, InlineKeyboardMarkup]:
                 "mode:toggle",
             )
         ],
+        [_btn("🔔 Notification de test", "test:notify"), _btn("♻️ Actualiser", "menu:refresh")],
         [_back_menu()],
     ]
     return text, InlineKeyboardMarkup(rows)
@@ -409,6 +414,28 @@ async def cmd_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _reply(update, *panel_reco(service))
 
 
+async def _toggle_hidden(update: Update, context: ContextTypes.DEFAULT_TYPE, hidden: bool) -> None:
+    service: KairosService = context.application.bot_data["service"]
+    ride = service.resolve_ride(" ".join(context.args))
+    if ride is None:
+        await _reply(update, "Attraction introuvable. Vérifie avec /liste.")
+        return
+    service.store.set_ride_hidden(ride.id, hidden)
+    if hidden:
+        await _reply(update, f"🙈 <b>{esc_text(ride.name)}</b> masquée — elle reste collectée, "
+                             "mais n'apparaît plus dans /liste, /ou ni le dashboard.")
+    else:
+        await _reply(update, f"👁️ <b>{esc_text(ride.name)}</b> réaffichée.")
+
+
+async def cmd_masquer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _toggle_hidden(update, context, True)
+
+
+async def cmd_afficher(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _toggle_hidden(update, context, False)
+
+
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     service: KairosService = context.application.bot_data["service"]
     stats = service.store.stats()
@@ -434,6 +461,29 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _reply(update, f"🆔 <code>{chat.id}</code> ({esc_text(chat.type)})")
 
 
+def _test_sample(target) -> str:
+    return (
+        "🔔 <b>Test de notification</b>\n\n"
+        "Voici le rendu d'une alerte en mode séjour :\n\n"
+        "⚡ <b>Shambhala</b> — 12 min (seuil 15) · Chine\n"
+        "<i>C'est le moment, fonce !</i>\n\n"
+        f"<i>Chat ciblé : <code>{target}</code></i>"
+    )
+
+
+async def _send_test(service: KairosService, fallback_chat_id: int | None = None) -> bool:
+    """Envoie une notification de test via le notifier. Renvoie False si aucun canal."""
+    target = (
+        service.settings.chat_id
+        or service.store.get_state("telegram_chat_id")
+        or fallback_chat_id
+    )
+    if service.notifier is None or not target:
+        return False
+    await service.notifier(_test_sample(target))
+    return True
+
+
 async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Envoie une notification de test en empruntant le même chemin que les alertes."""
     service: KairosService = context.application.bot_data["service"]
@@ -442,13 +492,7 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     target = service.settings.chat_id or service.store.get_state("telegram_chat_id") or chat.id
-    sample = (
-        "🔔 <b>Test de notification</b>\n\n"
-        "Voici le rendu d'une alerte en mode séjour :\n\n"
-        "⚡ <b>Shambhala</b> — 12 min (seuil 15) · Chine\n"
-        "<i>C'est le moment, fonce !</i>\n\n"
-        f"<i>Chat ciblé : <code>{target}</code></i>"
-    )
+    sample = _test_sample(target)
 
     if service.notifier is not None:
         await service.notifier(sample)
@@ -465,12 +509,28 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     query = update.callback_query
     if query is None:
         return
-    await query.answer()
     service: KairosService = context.application.bot_data["service"]
     data = query.data or ""
 
     if data == "noop":
+        await query.answer()
         return
+
+    if data == "test:notify":
+        await query.answer("Notification de test envoyée ✅", show_alert=True)
+        await _send_test(service)
+        return
+
+    # Bouton « Actualiser » : force un poll puis remet à jour le panneau « Où aller ».
+    if data == "menu:refresh":
+        await query.answer()
+        await _safe_edit(query, "⏳ Actualisation auprès du parc…", None)
+        await service.poll_once()
+        text, markup = panel_reco(service)
+        await _safe_edit(query, text, markup)
+        return
+
+    await query.answer()
 
     if data == "menu:main":
         text, markup = panel_menu(service)
@@ -647,6 +707,8 @@ def build_application(service: KairosService, settings: Settings) -> Application
     app.add_handler(CommandHandler("parc", cmd_parc))
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("refresh", cmd_refresh))
+    app.add_handler(CommandHandler("masquer", cmd_masquer))
+    app.add_handler(CommandHandler("afficher", cmd_afficher))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("id", cmd_id))
     app.add_handler(CommandHandler("test", cmd_test))

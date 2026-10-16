@@ -99,11 +99,33 @@ class Store:
             )
             self._conn.commit()
 
-    def rides(self) -> list[Ride]:
+    def hidden_ride_ids(self) -> set[int]:
+        """Attractions masquées (jamais proposées) : utile pour les attractions fantômes."""
+        raw = self.get_state("hidden_rides") or []
+        try:
+            return {int(x) for x in raw}
+        except (TypeError, ValueError):
+            return set()
+
+    def set_ride_hidden(self, ride_id: int, hidden: bool) -> None:
+        ids = self.hidden_ride_ids()
+        if hidden:
+            ids.add(ride_id)
+        else:
+            ids.discard(ride_id)
+        self.set_state("hidden_rides", sorted(ids))
+
+    def rides(self, include_hidden: bool = False) -> list[Ride]:
+        """Attractions. Par défaut, les attractions masquées sont exclues.
+
+        ``include_hidden=True`` sert à la collecte et aux lookups (résolution par nom),
+        pour ne pas perdre l'historique ni empêcher de les réafficher.
+        """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id, name, park, zone, category, priority FROM rides ORDER BY park, name"
             ).fetchall()
+        hidden = set() if include_hidden else self.hidden_ride_ids()
         return [
             Ride(
                 id=row["id"],
@@ -114,6 +136,7 @@ class Store:
                 priority=row["priority"],
             )
             for row in rows
+            if row["id"] not in hidden
         ]
 
     def set_priority(self, ride_id: int, priority: int) -> None:

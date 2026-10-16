@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from src.models import Ride
 from src.store import Store
 
 
@@ -31,4 +32,26 @@ def test_done_and_state_roundtrip(tmp_path) -> None:
     store.set_state("current_zone", "Chine")
     assert store.get_state("current_zone") == "Chine"
     assert store.get_state("absent", default="defaut") == "defaut"
+    store.close()
+
+
+def test_hidden_rides_are_filtered(tmp_path) -> None:
+    store = Store(tmp_path / "s3.db")
+    store.sync_rides(
+        [
+            Ride(id=1, name="Visible", park="p", zone="z", category="family", priority=2),
+            Ride(id=2, name="Fantome", park="p", zone="z", category="family", priority=2),
+        ]
+    )
+    assert {r.id for r in store.rides()} == {1, 2}
+
+    store.set_ride_hidden(2, True)
+    assert {r.id for r in store.rides()} == {1}
+    # get_state tolère une valeur absente/inattendue
+    assert store.hidden_ride_ids() == {2}
+    assert {r.id for r in store.rides(include_hidden=True)} == {1, 2}
+
+    store.set_ride_hidden(2, False)
+    assert {r.id for r in store.rides()} == {1, 2}
+    assert store.hidden_ride_ids() == set()
     store.close()

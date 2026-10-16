@@ -93,7 +93,7 @@ class KairosService:
         q = (query or "").strip().lower()
         if not q:
             return None
-        rides = self.store.rides()
+        rides = self.store.rides(include_hidden=True)
         for ride in rides:
             if ride.name.lower() == q:
                 return ride
@@ -135,7 +135,8 @@ class KairosService:
 
         data = await self.fetcher.fetch_all()
 
-        known = {ride.id: ride for ride in self.store.rides()}
+        # On collecte aussi les attractions masquées (historique conservé, réaffichage possible).
+        known = {ride.id: ride for ride in self.store.rides(include_hidden=True)}
         rows: list[tuple[int, datetime, int, bool]] = []
         for raw_rides in data.values():
             for raw in raw_rides:

@@ -87,6 +87,7 @@ python main.py
 | `/prio <attraction> <1-3>` | Régler la priorité |
 | `/ajouter` · `/retirer` | Raccourcis de priorité (3 / 1) |
 | `/seuil [minutes]` | Voir/régler le seuil d'alerte global ou par attraction |
+| `/masquer <attraction>` · `/afficher <attraction>` | Masquer (attraction fantôme) ou réafficher une attraction |
 | `/parc` | Attente moyenne par parc |
 | `/mode collect\|trip` | Basculer le mode de fonctionnement |
 | `/refresh` | Forcer une mise à jour immédiate |
@@ -104,7 +105,8 @@ python main.py
 - 📊 **Temps d'attente** — filtrable par parc
 - 📍 **Ma zone** — sélection de zone (affine les temps de marche)
 - ✅ **Checklist** — liste paginée, on coche/décoche d'un simple tap
-- ⚙️ **Réglages** — seuil d'alerte (➖5 / ➖1 / ➕1 / ➕5) et bascule collecte ↔ séjour
+- ⚙️ **Réglages** — seuil d'alerte (➖5 / ➖1 / ➕1 / ➕5), bascule collecte ↔ séjour, notification de test
+- ♻️ **Actualiser** — force un poll immédiat sans taper `/refresh`
 
 > **Pourquoi des boutons inline et pas une reply keyboard ?** Dans un groupe, Telegram ne transmet pas au bot les messages issus d'une reply keyboard (mode confidentialité). Les boutons inline, eux, passent toujours (callback queries) — et restent partagés par tout le groupe.
 
@@ -180,6 +182,8 @@ Automatique si tu es passé par `deploy/install.sh` (cron quotidien à 04:00). S
 - **Nouvelles attractions** : `python tools/refresh_rides.py` met à jour `config/rides.json` en conservant zones/priorités existantes (à relancer avant le séjour).
 - **Horaires** : corriger `config/hours.json` dès que le parc publie les horaires définitifs d'avril 2027.
 - **Vérifier la config** : `python tools/check_config.py` (n'affiche jamais le token en clair).
+- **Auditer les attractions** : `python tools/audit_rides.py` lit l'historique et propose
+  les attractions fantômes à masquer, les priorités et seuils à ajuster (commandes prêtes à copier).
 - **Tests** : `pytest`.
 
 ## Dépannage
