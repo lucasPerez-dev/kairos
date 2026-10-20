@@ -394,10 +394,27 @@ class KairosService:
 
     # -------------------------------------------------------- dashboard --- #
 
+    @staticmethod
+    def _reco_payload(r) -> dict[str, Any]:
+        return {
+            "id": r.ride.id,
+            "name": r.ride.name,
+            "zone": r.ride.zone,
+            "wait_minutes": r.wait_minutes,
+            "trend_label": r.trend_label,
+            "trend": r.trend_delta,
+            "travel_minutes": r.travel_minutes,
+            "score": r.score,
+            "reason": r.reason,
+        }
+
     def state_payload(self) -> dict[str, Any]:
         now = utcnow()
         statuses = self.engine.statuses(self.current_zone(), now)
         recos = self.engine.recommend(self.current_zone(), limit=5, now=now)
+        coaster_recos = self.engine.recommend(
+            self.current_zone(), limit=5, now=now, categories={"coaster"}
+        )
 
         rides_payload: list[dict[str, Any]] = []
         for status in statuses:
@@ -441,20 +458,8 @@ class KairosService:
                 for p in self.parks
             ],
             "rides": rides_payload,
-            "recommendations": [
-                {
-                    "id": r.ride.id,
-                    "name": r.ride.name,
-                    "zone": r.ride.zone,
-                    "wait_minutes": r.wait_minutes,
-                    "trend_label": r.trend_label,
-                    "trend": r.trend_delta,
-                    "travel_minutes": r.travel_minutes,
-                    "score": r.score,
-                    "reason": r.reason,
-                }
-                for r in recos
-            ],
+            "recommendations": [self._reco_payload(r) for r in recos],
+            "coaster_recommendations": [self._reco_payload(r) for r in coaster_recos],
             "last_poll": iso(self.last_poll) if self.last_poll else None,
             "last_error": self.last_error,
             "attribution": {

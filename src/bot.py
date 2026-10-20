@@ -43,6 +43,7 @@ HELP_TEXT = (
     "/ajouter &lt;attraction&gt; / /retirer &lt;attraction&gt;\n"
     "/prio &lt;attraction&gt; &lt;1-3&gt; — régler la priorité\n"
     "/seuil [minutes] — voir/régler le seuil d'alerte\n"
+    "/alertes [toutes|coasters] — portée des notifications\n"
     "/masquer &lt;attraction&gt; — retirer des listes/recommandations\n"
     "/afficher &lt;attraction&gt; — réafficher une attraction masquée\n"
     "/parc — occupation par parc\n"
@@ -215,10 +216,12 @@ def panel_liste(service: KairosService, page: int = 0) -> tuple[str, InlineKeybo
 def panel_reglages(service: KairosService) -> tuple[str, InlineKeyboardMarkup]:
     thr = service.alerter.default_threshold()
     trip = service.mode == "trip"
+    coasters_only = service.alerter.alert_scope() == "coasters"
     text = (
         "⚙️ <b>Réglages</b>\n\n"
         f"🔔 Seuil d'alerte : <b>{thr} min</b>\n"
         "<i>Le bot prévient quand une attraction passe sous ce temps.</i>\n\n"
+        f"Portée des alertes : <b>{'montagnes russes' if coasters_only else 'toutes attractions'}</b>\n"
         f"Mode : <b>{'séjour (alertes actives)' if trip else 'collecte (sans alertes)'}</b>"
     )
     rows = [
@@ -233,6 +236,12 @@ def panel_reglages(service: KairosService) -> tuple[str, InlineKeyboardMarkup]:
             _btn(
                 "🟡 Passer en mode séjour" if not trip else "🟢 Repasser en mode collecte",
                 "mode:toggle",
+            )
+        ],
+        [
+            _btn(
+                "🎢 Alertes : coasters" if not coasters_only else "🔔 Alertes : toutes",
+                "alertes:toggle",
             )
         ],
         [_btn("🔔 Notification de test", "test:notify"), _btn("♻️ Actualiser", "menu:refresh")],
@@ -373,6 +382,27 @@ async def cmd_seuil(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await _reply(update, f"🔔 Seuil spécifique retiré pour <b>{esc_text(ride.name)}</b>.")
         return
     await _reply(update, "Usage : <code>/seuil 20</code> ou <code>/seuil Dragon Khan 30</code>.")
+
+
+async def cmd_alertes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Portée des notifications : toutes les attractions ou seulement les coasters."""
+    service: KairosService = context.application.bot_data["service"]
+    args = [a.lower() for a in (context.args or [])]
+    if args and args[0] in ("coasters", "coaster"):
+        service.alerter.set_alert_scope("coasters")
+        await _reply(update, "🎢 Alertes limitées aux <b>montagnes russes</b>.")
+        return
+    if args and args[0] in ("toutes", "tous", "all"):
+        service.alerter.set_alert_scope("all")
+        await _reply(update, "🔔 Alertes pour <b>toutes les attractions</b>.")
+        return
+    scope = service.alerter.alert_scope()
+    label = "🎢 montagnes russes uniquement" if scope == "coasters" else "🔔 toutes les attractions"
+    await _reply(
+        update,
+        f"Portée des alertes : <b>{label}</b>.\n"
+        "Usage : <code>/alertes coasters</code> ou <code>/alertes toutes</code>.",
+    )
 
 
 async def cmd_parc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -549,6 +579,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         text, markup = panel_liste(service, page)
     elif data == "menu:reglages":
         text, markup = panel_reglages(service)
+    elif data == "alertes:toggle":
+        service.alerter.set_alert_scope(
+            "all" if service.alerter.alert_scope() == "coasters" else "coasters"
+        )
+        text, markup = panel_reglages(service)
     elif data == "menu:aide":
         text, markup = HELP_TEXT, InlineKeyboardMarkup([[_back_menu()]])
     elif data.startswith("zone:set:"):
@@ -707,6 +742,7 @@ def build_application(service: KairosService, settings: Settings) -> Application
     app.add_handler(CommandHandler("retirer", cmd_retirer))
     app.add_handler(CommandHandler("prio", cmd_prio))
     app.add_handler(CommandHandler("seuil", cmd_seuil))
+    app.add_handler(CommandHandler("alertes", cmd_alertes))
     app.add_handler(CommandHandler("parc", cmd_parc))
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("refresh", cmd_refresh))

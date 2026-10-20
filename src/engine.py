@@ -116,6 +116,7 @@ class Engine:
         current_zone: str | None = None,
         now: datetime | None = None,
         with_trend: bool = True,
+        categories: set[str] | None = None,
     ) -> list[RideStatus]:
         now = now or datetime.now(timezone.utc)
         latest = self.store.latest()
@@ -124,6 +125,8 @@ class Engine:
 
         out: list[RideStatus] = []
         for ride in self.store.rides():
+            if categories is not None and ride.category not in categories:
+                continue
             # Phase et fermeture propres au parc de l'attraction (horaires distincts).
             if ride.park not in phases:
                 phases[ride.park] = (
@@ -153,11 +156,12 @@ class Engine:
         current_zone: str | None = None,
         limit: int = 3,
         now: datetime | None = None,
+        categories: set[str] | None = None,
     ) -> list[Recommendation]:
         now = now or datetime.now(timezone.utc)
 
         candidates = [
-            st for st in self.statuses(current_zone, now)
+            st for st in self.statuses(current_zone, now, categories=categories)
             if st.is_open and not st.done
         ]
         candidates.sort(key=lambda st: st.score, reverse=True)

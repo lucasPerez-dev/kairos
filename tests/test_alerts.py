@@ -66,6 +66,31 @@ def test_cooldown_applies_across_kinds(tmp_path) -> None:
     assert alerter.evaluate([RideStatus(ride=RIDE, is_open=True, wait_minutes=5)]) == []
 
 
+def test_scope_coasters_only(tmp_path) -> None:
+    store, alerter = _alerter(tmp_path)
+    coaster = Ride(1, "Coaster", "portaventura", "Chine", "coaster", 2)
+    family = Ride(2, "Family", "portaventura", "Chine", "family", 2)
+
+    alerter.set_alert_scope("coasters")
+    assert alerter.alert_scope() == "coasters"
+    alerter.prime(
+        [
+            RideStatus(ride=coaster, is_open=True, wait_minutes=30),
+            RideStatus(ride=family, is_open=True, wait_minutes=30),
+        ]
+    )
+    alerts = alerter.evaluate(
+        [
+            RideStatus(ride=coaster, is_open=True, wait_minutes=5),
+            RideStatus(ride=family, is_open=True, wait_minutes=5),
+        ]
+    )
+    assert [a.ride.id for a in alerts] == [1]  # seule la montagne russe alerte
+
+    alerter.set_alert_scope("all")
+    assert alerter.alert_scope() == "all"
+
+
 def test_single_alert_keeps_classic_format(tmp_path) -> None:
     service = _service(tmp_path)
     alert = Alert(ride=RIDE, wait_minutes=10, threshold=25, kind="threshold")

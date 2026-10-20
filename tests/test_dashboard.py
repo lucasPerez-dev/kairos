@@ -48,7 +48,10 @@ def test_page_and_state(tmp_path) -> None:
     assert client.get("/").status_code == 200
 
     body = client.get("/api/state").json()
-    for key in ("phase", "parks", "rides", "recommendations", "alert_threshold", "hours_warning"):
+    for key in (
+        "phase", "parks", "rides", "recommendations", "coaster_recommendations",
+        "alert_threshold", "hours_warning",
+    ):
         assert key in body
     assert body["parks"][0]["key"] == "portaventura"
     assert "phase" in body["parks"][0]

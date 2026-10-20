@@ -318,9 +318,11 @@ function renderZones(data) {
 function renderHero(data) {
   const hero = document.getElementById("heroReco");
   const alt = document.getElementById("altRecos");
-  const recos = data.recommendations || [];
+  const coasterMode = ui.park === "coasters";
+  const recos = (coasterMode ? data.coaster_recommendations : data.recommendations) || [];
+  const rankLabel = coasterMode ? "🥇 Meilleur coaster" : "🥇 Meilleur choix";
   if (!recos.length) {
-    hero.innerHTML = '<div class="hero-card empty">Aucune attraction ouverte pour l\u2019instant.</div>';
+    hero.innerHTML = `<div class="hero-card empty">${coasterMode ? "Aucun coaster ouvert" : "Aucune attraction ouverte"} pour l\u2019instant.</div>`;
     alt.innerHTML = "";
     return;
   }
@@ -330,7 +332,7 @@ function renderHero(data) {
   // apporte autre chose (tendance, fermeture…).
   const why = /^(\d+ min de marche|dans ta zone)$/.test(r.reason) ? "" : r.reason;
   hero.innerHTML = `<div class="hero-card">
-    <div class="hero-rank">🥇 Meilleur choix</div>
+    <div class="hero-rank">${rankLabel}</div>
     <div class="hero-name">${esc(r.name)}</div>
     <div class="hero-meta">
       <span class="w ${waitClass(r.wait_minutes)}">${fmtWait(r.wait_minutes)}</span>
@@ -378,13 +380,16 @@ function rowHtml(r, closed = false) {
 function renderBoard(data) {
   document.getElementById("parkTabs").innerHTML =
     `<button class="tab ${ui.park === "all" ? "active" : ""}" data-park="all">Tous</button>` +
+    `<button class="tab ${ui.park === "coasters" ? "active" : ""}" data-park="coasters">🎢 Coasters</button>` +
     data.parks.map(p => `<button class="tab ${ui.park === p.key ? "active" : ""}" data-park="${esc(p.key)}">${esc(p.name)}</button>`).join("");
 
   const board = document.getElementById("board");
+  const coasterMode = ui.park === "coasters";
   let html = "";
   for (const park of data.parks) {
-    if (ui.park !== "all" && park.key !== ui.park) continue;
+    if (ui.park !== "all" && ui.park !== "coasters" && park.key !== ui.park) continue;
     let rides = data.rides.filter(r => r.park === park.key);
+    if (coasterMode) rides = rides.filter(r => r.category === "coaster");
     if (!rides.length) continue;
     if (ui.filter === "open") rides = rides.filter(r => r.is_open);
     if (ui.filter === "p3") rides = rides.filter(r => r.priority >= 3);
@@ -515,7 +520,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet()
 
 document.getElementById("parkTabs").addEventListener("click", e => {
   const btn = e.target.closest("[data-park]");
-  if (btn) { ui.park = btn.dataset.park; renderBoard(LATEST); }
+  if (btn) { ui.park = btn.dataset.park; renderBoard(LATEST); renderHero(LATEST); }
 });
 document.getElementById("filters").addEventListener("click", e => {
   const btn = e.target.closest("[data-filter]");

@@ -107,6 +107,23 @@ def test_engine_detects_falling_trend_and_recommends(tmp_path) -> None:
     store.close()
 
 
+def test_recommend_can_filter_category(tmp_path) -> None:
+    store = Store(tmp_path / "c.db")
+    store.sync_rides(
+        [
+            Ride(1, "Coaster", "portaventura", "Chine", "coaster", 3),
+            Ride(2, "Family", "portaventura", "Chine", "family", 3),
+        ]
+    )
+    now = datetime(2027, 4, 2, 12, 0, tzinfo=timezone.utc)
+    store.add_snapshots([(1, now, 10, True), (2, now, 10, True)])
+    engine = Engine(store, _hours(), _zones())
+
+    recos = engine.recommend(current_zone=None, limit=5, now=now, categories={"coaster"})
+    assert [r.ride.id for r in recos] == [1]
+    store.close()
+
+
 def test_engine_excludes_done_rides(tmp_path) -> None:
     store = Store(tmp_path / "t.db")
     store.sync_rides([Ride(1, "Test Coaster", "portaventura", "Chine", "coaster", 3)])

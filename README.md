@@ -87,6 +87,7 @@ python main.py
 | `/prio <attraction> <1-3>` | Régler la priorité |
 | `/ajouter` · `/retirer` | Raccourcis de priorité (3 / 1) |
 | `/seuil [minutes]` | Voir/régler le seuil d'alerte global ou par attraction |
+| `/alertes [toutes\|coasters]` | Portée des notifications : toutes les attractions ou seulement les montagnes russes |
 | `/masquer <attraction>` · `/afficher <attraction>` | Masquer (attraction fantôme) ou réafficher une attraction |
 | `/parc` | Attente moyenne par parc |
 | `/mode collect\|trip` | Basculer le mode de fonctionnement |
@@ -95,7 +96,7 @@ python main.py
 | `/test` | Envoyer une notification de test |
 | `/id` | Identifiant du chat courant |
 
-**Alertes automatiques** (mode `trip`) : notification au franchissement d'un seuil (anti-spam : cooldown 30 min), briefing le matin, rappel 1 h avant la fermeture.
+**Alertes automatiques** (mode `trip`) : notification au franchissement d'un seuil (anti-spam : cooldown 30 min), briefing le matin, rappel 1 h avant la fermeture. La portée se règle avec `/alertes toutes` (défaut) ou `/alertes coasters` (montagnes russes uniquement).
 
 ## Panneau interactif
 
@@ -105,7 +106,7 @@ python main.py
 - 📊 **Temps d'attente** — filtrable par parc
 - 📍 **Ma zone** — sélection de zone (affine les temps de marche)
 - ✅ **Checklist** — liste paginée, on coche/décoche d'un simple tap
-- ⚙️ **Réglages** — seuil d'alerte (➖5 / ➖1 / ➕1 / ➕5), bascule collecte ↔ séjour, notification de test
+- ⚙️ **Réglages** — seuil d'alerte (➖5 / ➖1 / ➕1 / ➕5), bascule collecte ↔ séjour, portée des alertes (toutes / coasters), notification de test
 - ♻️ **Actualiser** — force un poll immédiat sans taper `/refresh`
 
 > **Pourquoi des boutons inline et pas une reply keyboard ?** Dans un groupe, Telegram ne transmet pas au bot les messages issus d'une reply keyboard (mode confidentialité). Les boutons inline, eux, passent toujours (callback queries) — et restent partagés par tout le groupe.
@@ -118,6 +119,7 @@ Page web auto-rafraîchie (60 s) accessible en LAN **et via Tailscale**, pensée
 
 - un **héros** « Meilleur choix » (attente, tendance, marche, raison) + les alternatives en pastilles ;
 - un **board compact** par parc, avec **barre proportionnelle** et couleur pilotée par le seuil d'alerte réel (pas de seuils codés en dur) ;
+- **onglet 🎢 Coasters** : ne montre que les montagnes russes, avec un héros « Meilleur coaster » (scoring dédié) ;
 - **filtres** (Toutes / Ouvertes / Priorité 3), **tri** (attente / priorité / zone) et onglets par parc ;
 - attractions **fermées repliées** dans un bloc dépliable ;
 - **pastilles de phase par parc**, **indicateur de fraîcheur** (« maj il y a X s »), **bouton ♻️ Actualiser** (poll immédiat) ;

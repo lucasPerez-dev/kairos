@@ -45,6 +45,15 @@ class Alerter:
             overrides[str(ride_id)] = int(minutes)
         self.store.set_state("alert_threshold_overrides", overrides)
 
+    # --------------------------------------------------------- portée --- #
+
+    def alert_scope(self) -> str:
+        """``all`` (toutes attractions) ou ``coasters`` (montagnes russes uniquement)."""
+        return self.store.get_state("alert_scope", "all") or "all"
+
+    def set_alert_scope(self, scope: str) -> None:
+        self.store.set_state("alert_scope", "coasters" if scope == "coasters" else "all")
+
     # -------------------------------------------------------- évaluation --- #
 
     def prime(self, statuses: list[RideStatus]) -> None:
@@ -58,6 +67,7 @@ class Alerter:
         """Détecte les franchissements de seuil et les réouvertures."""
         now = datetime.now(timezone.utc)
         cooldown = self.settings.alert_cooldown_minutes
+        coasters_only = self.alert_scope() == "coasters"
         alerts: list[Alert] = []
 
         for status in statuses:
@@ -73,6 +83,8 @@ class Alerter:
             if status.done or not status.is_open:
                 continue
             if status.ride.priority < 2:
+                continue
+            if coasters_only and status.ride.category != "coaster":
                 continue
 
             threshold = self.threshold_for(ride_id)

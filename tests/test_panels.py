@@ -85,4 +85,4 @@ def test_reglages_has_test_and_refresh_buttons(tmp_path) -> None:
     service = make_service(tmp_path)
     _, markup = panel_reglages(service)
     datas = [btn.callback_data for row in markup.inline_keyboard for btn in row]
-    assert "test:notify" in datas and "menu:refresh" in datas
+    assert "test:notify" in datas and "menu:refresh" in datas and "alertes:toggle" in datas
