@@ -22,6 +22,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+from .alerts import SENSITIVITY_LEVELS
 from .config import Settings
 from .net import ipv4_transport
 from .service import KairosService, esc
@@ -42,8 +43,9 @@ HELP_TEXT = (
     "/fait &lt;attraction&gt; / /annule &lt;attraction&gt;\n"
     "/ajouter &lt;attraction&gt; / /retirer &lt;attraction&gt;\n"
     "/prio &lt;attraction&gt; &lt;1-3&gt; — régler la priorité\n"
-    "/seuil [minutes] — voir/régler le seuil d'alerte\n"
+    "/seuil [minutes] — seuil manuel (override ; l'alerting est adaptatif par défaut)\n"
     "/alertes [toutes|coasters] — portée des notifications\n"
+    "/alertes sensibilite prudent|normal|agressif\n"
     "/masquer &lt;attraction&gt; — retirer des listes/recommandations\n"
     "/afficher &lt;attraction&gt; — réafficher une attraction masquée\n"
     "/parc — occupation par parc\n"
@@ -217,11 +219,14 @@ def panel_reglages(service: KairosService) -> tuple[str, InlineKeyboardMarkup]:
     thr = service.alerter.default_threshold()
     trip = service.mode == "trip"
     coasters_only = service.alerter.alert_scope() == "coasters"
+    sensitivity = service.alerter.alert_sensitivity()
     text = (
         "⚙️ <b>Réglages</b>\n\n"
-        f"🔔 Seuil d'alerte : <b>{thr} min</b>\n"
-        "<i>Le bot prévient quand une attraction passe sous ce temps.</i>\n\n"
-        f"Portée des alertes : <b>{'montagnes russes' if coasters_only else 'toutes attractions'}</b>\n"
+        "🔔 Alertes <b>adaptatives</b> : le bot apprend l'attente habituelle de chaque\n"
+        "attraction selon l'heure et prévient quand elle devient anormalement basse.\n\n"
+        f"🎚️ Sensibilité : <b>{sensitivity}</b>\n"
+        f"Portée : <b>{'montagnes russes' if coasters_only else 'toutes attractions'}</b>\n"
+        f"Seuil manuel de repli : {thr} min\n"
         f"Mode : <b>{'séjour (alertes actives)' if trip else 'collecte (sans alertes)'}</b>"
     )
     rows = [
@@ -244,6 +249,7 @@ def panel_reglages(service: KairosService) -> tuple[str, InlineKeyboardMarkup]:
                 "alertes:toggle",
             )
         ],
+        [_btn(f"🎚️ Sensibilité : {sensitivity}", "sensibilite:cycle")],
         [_btn("🔔 Notification de test", "test:notify"), _btn("♻️ Actualiser", "menu:refresh")],
         [_back_menu()],
     ]
@@ -369,6 +375,14 @@ async def cmd_seuil(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         service.alerter.set_default_threshold(int(args[0]))
         await _reply(update, f"🔔 Seuil par défaut réglé à <b>{int(args[0])} min</b>.")
         return
+    if args[-1].lower() == "auto" and len(args) >= 2:
+        ride = service.resolve_ride(" ".join(args[:-1]))
+        if ride is None:
+            await _reply(update, "Attraction introuvable. Vérifie avec /liste.")
+            return
+        service.alerter.set_ride_threshold(ride.id, None)
+        await _reply(update, f"🎚️ <b>{esc_text(ride.name)}</b> : retour à l'alerting adaptatif.")
+        return
     if args[-1].isdigit():
         ride = service.resolve_ride(" ".join(args[:-1]))
         if ride is None:
@@ -381,13 +395,29 @@ async def cmd_seuil(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             await _reply(update, f"🔔 Seuil spécifique retiré pour <b>{esc_text(ride.name)}</b>.")
         return
-    await _reply(update, "Usage : <code>/seuil 20</code> ou <code>/seuil Dragon Khan 30</code>.")
+    await _reply(
+        update,
+        "Usage : <code>/seuil 20</code>, <code>/seuil Dragon Khan 30</code> "
+        "ou <code>/seuil Dragon Khan auto</code> (retour à l'adaptatif).",
+    )
 
 
 async def cmd_alertes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Portée des notifications : toutes les attractions ou seulement les coasters."""
     service: KairosService = context.application.bot_data["service"]
     args = [a.lower() for a in (context.args or [])]
+    if args and args[0] in ("sensibilite", "sensibilité", "sensitivity"):
+        if len(args) >= 2 and args[1] in SENSITIVITY_LEVELS:
+            service.alerter.set_alert_sensitivity(args[1])
+            await _reply(update, f"🎚️ Sensibilité des alertes : <b>{args[1]}</b>.")
+            return
+        current = service.alerter.alert_sensitivity()
+        await _reply(
+            update,
+            f"Sensibilité : <b>{current}</b>.\n"
+            "Usage : <code>/alertes sensibilite prudent|normal|agressif</code>.",
+        )
+        return
     if args and args[0] in ("coasters", "coaster"):
         service.alerter.set_alert_scope("coasters")
         await _reply(update, "🎢 Alertes limitées aux <b>montagnes russes</b>.")
@@ -475,6 +505,8 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lines = [
         "📊 <b>État du service</b>",
         f"Mode : <b>{service.mode}</b>",
+        f"Alertes : <b>{service.alerter.alert_scope()}</b> · "
+        f"sensibilité <b>{service.alerter.alert_sensitivity()}</b>",
         f"Zone actuelle : {esc_text(service.current_zone() or '—')}",
         f"Snapshots : <b>{stats['snapshots']}</b> (du {first} au {last})",
         f"Attractions faites : <b>{len(done)}</b> / {len(service.rides())}",
@@ -583,6 +615,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         service.alerter.set_alert_scope(
             "all" if service.alerter.alert_scope() == "coasters" else "coasters"
         )
+        text, markup = panel_reglages(service)
+    elif data == "sensibilite:cycle":
+        levels = SENSITIVITY_LEVELS
+        current = service.alerter.alert_sensitivity()
+        index = (levels.index(current) + 1) % len(levels) if current in levels else 0
+        service.alerter.set_alert_sensitivity(levels[index])
         text, markup = panel_reglages(service)
     elif data == "menu:aide":
         text, markup = HELP_TEXT, InlineKeyboardMarkup([[_back_menu()]])

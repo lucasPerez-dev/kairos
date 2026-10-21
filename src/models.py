@@ -64,6 +64,7 @@ class Alert:
     wait_minutes: int
     threshold: int
     kind: str  # threshold | reopened
+    baseline_median: int | None = None  # attente habituelle à cette heure (alerting adaptatif)
 
 
 @dataclass

@@ -190,6 +190,25 @@ class Store:
             ).fetchall()
         return [(parse_iso(r["ts"]), r["wait"], bool(r["is_open"])) for r in rows]
 
+    def open_waits_by_ride(
+        self, since: datetime | None = None
+    ) -> dict[int, list[tuple[datetime, int]]]:
+        """Attentes observées (ouvertes) groupées par attraction — pour la baseline des alertes."""
+        with self._lock:
+            if since is not None:
+                rows = self._conn.execute(
+                    "SELECT ride_id, ts, wait FROM snapshots WHERE is_open = 1 AND ts >= ? ORDER BY ride_id, ts",
+                    (iso(since),),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT ride_id, ts, wait FROM snapshots WHERE is_open = 1 ORDER BY ride_id, ts"
+                ).fetchall()
+        out: dict[int, list[tuple[datetime, int]]] = {}
+        for row in rows:
+            out.setdefault(row["ride_id"], []).append((parse_iso(row["ts"]), row["wait"]))
+        return out
+
     def ride_open_waits(
         self, ride_id: int, since: datetime | None = None
     ) -> list[tuple[datetime, int]]:

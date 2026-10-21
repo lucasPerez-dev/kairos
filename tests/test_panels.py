@@ -61,7 +61,7 @@ def test_toggle_reflected_in_liste(tmp_path) -> None:
 def test_reglages_panel_threshold_and_mode(tmp_path) -> None:
     service = make_service(tmp_path)
     text, markup = panel_reglages(service)
-    assert "Seuil d'alerte" in text
+    assert "Seuil manuel" in text
     assert "collecte" in text
     datas = [btn.callback_data for row in markup.inline_keyboard for btn in row]
     assert "seuil:-1" in datas and "mode:toggle" in datas

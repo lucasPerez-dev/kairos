@@ -278,10 +278,13 @@ class KairosService:
 
     def format_alert(self, alert) -> str:
         icon = "🔓" if alert.kind == "reopened" else "⚡"
+        if alert.baseline_median is not None:
+            context = f"habituellement {alert.baseline_median} min à cette heure"
+        else:
+            context = f"seuil {alert.threshold} min"
         return (
-            f"{icon} <b>{esc(alert.ride.name)}</b> — {alert.wait_minutes} min "
-            f"(seuil {alert.threshold}) · {esc(alert.ride.zone)}\n"
-            f"<i>C'est le moment, fonce !</i>"
+            f"{icon} <b>{esc(alert.ride.name)}</b> — {alert.wait_minutes} min · {esc(alert.ride.zone)}\n"
+            f"<i>{context} — c'est le moment, fonce !</i>"
         )
 
     def format_alerts(self, alerts) -> list[str]:
@@ -306,8 +309,9 @@ class KairosService:
             lines = [f"{icon} <b>{len(group)} {verb} · {esc(self.park_name(park))}</b>"]
             for alert in group:
                 mark = "🔓" if alert.kind == "reopened" else "⚡"
+                suffix = f" (hab. {alert.baseline_median} min)" if alert.baseline_median is not None else ""
                 lines.append(
-                    f"{mark} <b>{esc(alert.ride.name)}</b> — {alert.wait_minutes} min · {esc(alert.ride.zone)}"
+                    f"{mark} <b>{esc(alert.ride.name)}</b> — {alert.wait_minutes} min{suffix} · {esc(alert.ride.zone)}"
                 )
             lines.append("<i>C'est le moment, foncez !</i>")
             messages.append("\n".join(lines))
