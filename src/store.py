@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     wait    INTEGER NOT NULL,
     is_open INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_snapshots_ride_ts ON snapshots(ride_id, ts);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshots_ride_ts ON snapshots(ride_id, ts);
 CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON snapshots(ts);
 
 CREATE TABLE IF NOT EXISTS state (
@@ -76,6 +76,26 @@ class Store:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(SCHEMA)
+            self._conn.commit()
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Garantit l'unicité (ride_id, ts) et nettoie les doublons hérités."""
+        with self._lock:
+            indexes = {
+                row["name"]: bool(row["unique"])
+                for row in self._conn.execute("PRAGMA index_list(snapshots)")
+            }
+            if indexes.get("idx_snapshots_ride_ts"):
+                return  # déjà unique
+            self._conn.execute(
+                "DELETE FROM snapshots WHERE id NOT IN "
+                "(SELECT MIN(id) FROM snapshots GROUP BY ride_id, ts)"
+            )
+            self._conn.execute("DROP INDEX IF EXISTS idx_snapshots_ride_ts")
+            self._conn.execute(
+                "CREATE UNIQUE INDEX idx_snapshots_ride_ts ON snapshots(ride_id, ts)"
+            )
             self._conn.commit()
 
     def close(self) -> None:
@@ -151,7 +171,7 @@ class Store:
     def add_snapshots(self, rows: Iterable[tuple[int, datetime, int, bool]]) -> None:
         with self._lock:
             self._conn.executemany(
-                "INSERT INTO snapshots (ride_id, ts, wait, is_open) VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO snapshots (ride_id, ts, wait, is_open) VALUES (?, ?, ?, ?)",
                 [(rid, iso(ts), wait, 1 if is_open else 0) for rid, ts, wait, is_open in rows],
             )
             self._conn.commit()

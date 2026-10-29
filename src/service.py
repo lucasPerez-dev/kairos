@@ -215,16 +215,26 @@ class KairosService:
 
         # On collecte aussi les attractions masquées (historique conservé, réaffichage possible).
         known = {ride.id: ride for ride in self.store.rides(include_hidden=True)}
+        previous = self.store.latest()
         rows: list[tuple[int, datetime, int, bool]] = []
+        fetched = 0
         for raw_rides in data.values():
             for raw in raw_rides:
                 if raw.ride_id not in known:
                     continue
-                rows.append((raw.ride_id, raw.updated or now, raw.wait_minutes, raw.is_open))
+                fetched += 1
+                if raw.is_open:
+                    rows.append((raw.ride_id, now, raw.wait_minutes, True))
+                else:
+                    # On ne stocke que la transition ouvert -> fermé, pas chaque poll fermé
+                    # (les attractions fermées en continu n'apportent aucune information).
+                    prev = previous.get(raw.ride_id)
+                    if prev is not None and prev["is_open"]:
+                        rows.append((raw.ride_id, now, raw.wait_minutes, False))
 
         self.last_poll = now
-        if not rows or not any(is_open for _, _, _, is_open in rows):
-            logger.debug("Aucune attraction ouverte : rien stocké.")
+        if not rows:
+            logger.debug("Aucun changement d'état à stocker.")
             return
 
         self.store.add_snapshots(rows)
@@ -244,7 +254,7 @@ class KairosService:
             cutoff = now - timedelta(days=self.settings.history_retention_days)
             self.store.prune_snapshots(cutoff)
 
-        logger.info("Poll OK : %d attractions mises à jour", len(rows))
+        logger.info("Poll OK : %d attractions lues, %d snapshots enregistrés", fetched, len(rows))
 
     # --------------------------------------------------------- timeline --- #
 

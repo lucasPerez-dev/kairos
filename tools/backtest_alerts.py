@@ -39,7 +39,7 @@ def main() -> int:
     parser.add_argument("--db", default=settings.db_path)
     parser.add_argument("--days", type=int, default=5, help="Nombre de jours à évaluer.")
     parser.add_argument("--sensitivity", choices=tuple(SENSITIVITIES), default="agressif")
-    parser.add_argument("--baseline-days", type=int, default=21)
+    parser.add_argument("--baseline-days", type=int, default=settings.alert_baseline_days)
     parser.add_argument("--min-samples", type=int, default=8)
     parser.add_argument("--cooldown", type=int, default=settings.alert_cooldown_minutes)
     parser.add_argument("--fixed", type=int, default=None,

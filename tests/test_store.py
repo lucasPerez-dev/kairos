@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from src.models import Ride
@@ -32,6 +33,39 @@ def test_done_and_state_roundtrip(tmp_path) -> None:
     store.set_state("current_zone", "Chine")
     assert store.get_state("current_zone") == "Chine"
     assert store.get_state("absent", default="defaut") == "defaut"
+    store.close()
+
+
+def test_duplicate_snapshots_are_ignored(tmp_path) -> None:
+    store = Store(tmp_path / "dup.db")
+    now = datetime.now(timezone.utc)
+    store.add_snapshots([(1, now, 30, True)])
+    store.add_snapshots([(1, now, 30, True)])  # même (ride_id, ts) -> ignoré
+    assert store.stats()["snapshots"] == 1
+    store.close()
+
+
+def test_migration_dedupes_and_enforces_uniqueness(tmp_path) -> None:
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript(
+        """
+        CREATE TABLE snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ride_id INTEGER NOT NULL,
+            ts TEXT NOT NULL, wait INTEGER NOT NULL, is_open INTEGER NOT NULL
+        );
+        CREATE INDEX idx_snapshots_ride_ts ON snapshots(ride_id, ts);
+        """
+    )
+    con.execute("INSERT INTO snapshots (ride_id, ts, wait, is_open) VALUES (1, '2026-01-01T10:00:00+00:00', 10, 1)")
+    con.execute("INSERT INTO snapshots (ride_id, ts, wait, is_open) VALUES (1, '2026-01-01T10:00:00+00:00', 10, 1)")
+    con.commit()
+    con.close()
+
+    store = Store(path)  # la migration dédoublonne et crée l'index unique
+    assert store.stats()["snapshots"] == 1
+    store.add_snapshots([(1, datetime(2026, 1, 1, 10, tzinfo=timezone.utc), 10, True)])
+    assert store.stats()["snapshots"] == 1
     store.close()
 
 

@@ -29,7 +29,6 @@ SENSITIVITIES: dict[str, dict[str, float]] = {
 SENSITIVITY_LEVELS = tuple(SENSITIVITIES)
 DEFAULT_SENSITIVITY = "agressif"
 
-BASELINE_DAYS = 21
 BASELINE_MIN_SAMPLES = 8
 BASELINE_TTL_SECONDS = 3600
 
@@ -123,7 +122,7 @@ class Alerter:
         now = time.monotonic()
         if self._baseline_at is not None and now - self._baseline_at < BASELINE_TTL_SECONDS:
             return
-        since = datetime.now(timezone.utc) - timedelta(days=BASELINE_DAYS)
+        since = datetime.now(timezone.utc) - timedelta(days=self.settings.alert_baseline_days)
         data = self.store.open_waits_by_ride(since)
         by_hour: dict[tuple[int, int], list[int]] = {}
         by_all: dict[int, list[int]] = {}

@@ -97,7 +97,7 @@ python main.py
 | `/test` | Envoyer une notification de test |
 | `/id` | Identifiant du chat courant |
 
-**Alertes automatiques** (mode `trip`) : l'alerting est **adaptatif**. Pour chaque attraction et chaque heure, le bot apprend l'attente habituelle (fenêtre glissante de 21 jours) et prévient quand elle devient **anormalement basse pour cette heure**, et seulement si l'attraction est normalement demandée à ce moment-là. Résultat : plus de « 0 min » inutile sur les manèges toujours vides, et un seuil propre à chaque coaster sans réglage manuel.
+**Alertes automatiques** (mode `trip`) : l'alerting est **adaptatif**. Pour chaque attraction et chaque heure, le bot apprend l'attente habituelle (fenêtre glissante de **7 jours**, réglable via `KAIROS_ALERT_BASELINE_DAYS`) et prévient quand elle devient **anormalement basse pour cette heure**, et seulement si l'attraction est normalement demandée à ce moment-là. Résultat : plus de « 0 min » inutile sur les manèges toujours vides, et un seuil propre à chaque coaster sans réglage manuel.
 
 - **Sensibilité** : `prudent` / `normal` / `agressif` (défaut), via `/alertes sensibilite …` ou le bouton ⚙️ Réglages.
 - **Portée** : `/alertes toutes` (défaut) ou `/alertes coasters`.
@@ -225,6 +225,7 @@ Automatique si tu es passé par `deploy/install.sh` (cron quotidien à 04:00). S
 
 ## Notes & limites
 
+- **Stockage optimisé** : une ligne par poll pour chaque attraction ouverte, et une seule ligne à sa fermeture (transition). Les attractions fermées en continu n'accumulent plus de lignes. Au démarrage, la base est automatiquement **dédupliquée** et protégée par un index unique `(attraction, horodatage)`.
 - Granularité de **5 minutes** (fréquence de l'API) : parfait pour décider « j'y vais maintenant », pas pour du temps réel à la seconde.
 - Les temps affichés par les parcs sont parfois **surestimés de 5–15 %** : les recommandations sont donc légèrement pessimistes.
 - `zone` et `category` des attractions sont des **estimations** (queue-times ne les fournit pas) : elles n'affectent que l'ordre des recommandations et peuvent être ajustées dans `config/rides.json`.

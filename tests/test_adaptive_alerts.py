@@ -26,10 +26,13 @@ def _alerter(tmp_path) -> tuple[Store, Alerter]:
 
 
 def _add_baseline(store: Store, waits: list[int]) -> None:
-    """Ajoute une observation par jour à la même heure locale que maintenant."""
+    """Ajoute 2 observations par jour sur 5 jours, à la même heure locale que maintenant."""
     now = datetime.now(timezone.utc).astimezone(TZ)
-    for k, wait in enumerate(waits, start=1):
-        store.add_snapshots([(RIDE.id, now - timedelta(days=k), wait, True)])
+    base = now.replace(minute=10, second=0, microsecond=0)
+    for k, wait in enumerate(waits):
+        day = (k // 2) + 1
+        ts = base - timedelta(days=day) + timedelta(minutes=10 * (k % 2))
+        store.add_snapshots([(RIDE.id, ts, wait, True)])
 
 
 def _status(wait: int) -> RideStatus:

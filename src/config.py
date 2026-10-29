@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     poll_interval_seconds: int = 300
     alert_default_threshold_minutes: int = 15
     alert_cooldown_minutes: int = 30
+    alert_baseline_days: int = 7
 
     # Dashboard
     dashboard_enabled: bool = True
